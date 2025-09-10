@@ -11,7 +11,7 @@ export default function TopNav({ current, onNavigate }: Props) {
     <div className="topbar glass">
       <div className="brand">
         <div className="title-lg grad-text brand-fr">FR</div>
-        <div className="subtitle">Ders Programı Oluşturma Portalı</div>
+        <div className="subtitle">Ders Programı Oluştur</div>
       </div>
 
       <div className="nav-wrap" style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center' }}>
