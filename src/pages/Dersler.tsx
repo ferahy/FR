@@ -259,6 +259,51 @@ function SubjectModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const perDayMaxLimit = Math.max(1, dailyLessons || 1)
+  const maxConsecutiveLimit = Math.max(2, dailyLessons || 2)
+
+  const sanitizeDigits = (value: string) => value.replace(/[^0-9]/g, '')
+
+  const setPerDayValue = (updater: (current: number) => number) => {
+    setState((s) => {
+      const base = s.perDayMax === '0' ? 1 : parseInt(s.perDayMax, 10)
+      const current = Number.isFinite(base) && base > 0 ? base : 1
+      const next = Math.max(1, Math.min(perDayMaxLimit, updater(current)))
+      return { ...s, perDayMax: String(next) }
+    })
+  }
+
+  const setMaxConsecutiveValue = (updater: (current: number) => number) => {
+    setState((s) => {
+      const base = s.maxConsecutive === '0' ? 2 : parseInt(s.maxConsecutive, 10)
+      const current = Number.isFinite(base) && base > 0 ? base : 2
+      const next = Math.max(2, Math.min(maxConsecutiveLimit, updater(current)))
+      return { ...s, maxConsecutive: String(next) }
+    })
+  }
+
+  const stepPerDay = (delta: number) => setPerDayValue((value) => value + delta)
+  const stepMaxConsecutive = (delta: number) => setMaxConsecutiveValue((value) => value + delta)
+
+  const handlePerDayInput = (raw: string) => {
+    const digits = sanitizeDigits(raw)
+    setState((s) => ({
+      ...s,
+      perDayMax: digits ? clampStr(digits, 1, perDayMaxLimit) : '1',
+    }))
+  }
+
+  const handleMaxConsecutiveInput = (raw: string) => {
+    const digits = sanitizeDigits(raw)
+    setState((s) => ({
+      ...s,
+      maxConsecutive: digits ? clampStr(digits, 2, maxConsecutiveLimit) : '2',
+    }))
+  }
+
+  const isPerDayLimited = state.perDayMax !== '0'
+  const isMaxConsecutiveLimited = state.maxConsecutive !== '0'
+
   // Reset when opening with different initial
   const prevId = useRef<string | undefined>(initial?.id)
   if (prevId.current !== initial?.id) {
@@ -403,21 +448,26 @@ function SubjectModal({
           <div className="field" style={{ flex: '1 1 240px' }}>
             <span className="field-label">Günlük üst sınır</span>
             <div className="segmented" role="group" aria-label="Günlük üst sınır modu">
-              <button type="button" className={`seg ${(parseInt(state.perDayMax || '0', 10) === 0) ? 'active blocked' : ''}`} aria-pressed={parseInt(state.perDayMax || '0', 10) === 0} onClick={() => setState((s) => ({ ...s, perDayMax: '0' }))}>Kapalı</button>
-              <button type="button" className={`seg ${(parseInt(state.perDayMax || '0', 10) > 0) ? 'active free' : ''}`} aria-pressed={parseInt(state.perDayMax || '0', 10) > 0} onClick={() => setState((s) => ({ ...s, perDayMax: String(Math.max(1, parseInt(s.perDayMax || '1', 10))) }))}>Açık</button>
+              <button type="button" className={"seg " + (!isPerDayLimited ? 'active blocked' : '')} aria-pressed={!isPerDayLimited} onClick={() => setState((s) => ({ ...s, perDayMax: '0' }))}>Kapalı</button>
+              <button type="button" className={"seg " + (isPerDayLimited ? 'active free' : '')} aria-pressed={isPerDayLimited} onClick={() => { if (!isPerDayLimited) setPerDayValue((value) => value) }}>Açık</button>
             </div>
-            {parseInt(state.perDayMax || '0', 10) > 0 && (
+            {isPerDayLimited && (
               <>
-                <input
-                  className={`input ${errors.perDayMax ? 'field-error' : ''}`}
-                  inputMode="numeric"
-                  pattern="\\d*"
-                  placeholder="sınırsız için Kapalı seçin"
-                  value={state.perDayMax}
-                  onChange={(e) => setState((s) => ({ ...s, perDayMax: clampStr(e.target.value, 1, dailyLessons) }))}
-                  aria-invalid={!!errors.perDayMax}
-                  aria-describedby={errors.perDayMax ? 'err-pdm' : undefined}
-                />
+                <div className="number-stepper">
+                  <button type="button" aria-label="Azalt" onClick={() => stepPerDay(-1)}>-</button>
+                  <input
+                    className={"input" + (errors.perDayMax ? ' field-error' : '')}
+                    inputMode="numeric"
+                    pattern="\\d*"
+                    placeholder="Sınırsız için Kapalı seçin"
+                    value={state.perDayMax}
+                    onChange={(e) => handlePerDayInput(e.target.value)}
+                    onBlur={() => setPerDayValue((value) => value)}
+                    aria-invalid={!!errors.perDayMax}
+                    aria-describedby={errors.perDayMax ? 'err-pdm' : undefined}
+                  />
+                  <button type="button" aria-label="Arttır" onClick={() => stepPerDay(1)}>+</button>
+                </div>
                 {errors.perDayMax && <span id="err-pdm" className="error-text">{errors.perDayMax}</span>}
               </>
             )}
@@ -431,21 +481,26 @@ function SubjectModal({
           <div className="field" style={{ flex: '1 1 240px' }}>
             <span className="field-label">Üst üste ders limiti</span>
             <div className="segmented" role="group" aria-label="Üst üste ders limiti modu">
-              <button type="button" className={`seg ${(parseInt(state.maxConsecutive || '0', 10) === 0) ? 'active blocked' : ''}`} aria-pressed={parseInt(state.maxConsecutive || '0', 10) === 0} onClick={() => setState((s) => ({ ...s, maxConsecutive: '0' }))}>Kapalı</button>
-              <button type="button" className={`seg ${(parseInt(state.maxConsecutive || '0', 10) > 0) ? 'active free' : ''}`} aria-pressed={parseInt(state.maxConsecutive || '0', 10) > 0} onClick={() => setState((s) => ({ ...s, maxConsecutive: String(Math.max(2, parseInt(s.maxConsecutive || '2', 10))) }))}>Açık</button>
+              <button type="button" className={"seg " + (!isMaxConsecutiveLimited ? 'active blocked' : '')} aria-pressed={!isMaxConsecutiveLimited} onClick={() => setState((s) => ({ ...s, maxConsecutive: '0' }))}>Kapalı</button>
+              <button type="button" className={"seg " + (isMaxConsecutiveLimited ? 'active free' : '')} aria-pressed={isMaxConsecutiveLimited} onClick={() => { if (!isMaxConsecutiveLimited) setMaxConsecutiveValue((value) => value) }}>Açık</button>
             </div>
-            {parseInt(state.maxConsecutive || '0', 10) > 0 && (
+            {isMaxConsecutiveLimited && (
               <>
                 <label className="field-label">Üst üste en fazla</label>
-                <input
-                  className={`input ${errors.maxConsecutive ? 'field-error' : ''}`}
-                  inputMode="numeric"
-                  pattern="\\d*"
-                  value={state.maxConsecutive}
-                  onChange={(e) => setState((s) => ({ ...s, maxConsecutive: clampStr(e.target.value, 2, dailyLessons) }))}
-                  aria-invalid={!!errors.maxConsecutive}
-                  aria-describedby={errors.maxConsecutive ? 'err-mc' : undefined}
-                />
+                <div className="number-stepper">
+                  <button type="button" aria-label="Azalt" onClick={() => stepMaxConsecutive(-1)}>-</button>
+                  <input
+                    className={"input" + (errors.maxConsecutive ? ' field-error' : '')}
+                    inputMode="numeric"
+                    pattern="\\d*"
+                    value={state.maxConsecutive}
+                    onChange={(e) => handleMaxConsecutiveInput(e.target.value)}
+                    onBlur={() => setMaxConsecutiveValue((value) => value)}
+                    aria-invalid={!!errors.maxConsecutive}
+                    aria-describedby={errors.maxConsecutive ? 'err-mc' : undefined}
+                  />
+                  <button type="button" aria-label="Arttır" onClick={() => stepMaxConsecutive(1)}>+</button>
+                </div>
                 {errors.maxConsecutive && <span id="err-mc" className="error-text">{errors.maxConsecutive}</span>}
               </>
             )}
