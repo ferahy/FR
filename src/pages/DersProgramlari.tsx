@@ -37,8 +37,9 @@ export default function DersProgramlari() {
       for (const day of DAYS) {
         let perDayCount: Record<string, number> = {}
         for (let si = 0; si < slots.length; si++) {
-          // pick next subject that still has remaining and respects perDayMax and no long consecutive
+          // pick next subject that still has remaining and respects perDayMax, consecutive limits and has an available teacher
           let pickedIndex = -1
+          let pickedTeacher: string | undefined
           for (let i = 0; i < pool.length; i++) {
             const subjId = pool[i]
             if (!subjId) continue
@@ -54,15 +55,18 @@ export default function DersProgramlari() {
               const consec = [prev, prev2, prev3].reduce((acc, v) => (v === subjId ? acc + 1 : acc), 0)
               if (consec >= maxConsec) continue
             }
+            const teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false })
+            if (!teacherId) continue
             pickedIndex = i
+            pickedTeacher = teacherId
             break
           }
-          if (pickedIndex === -1) continue
+          if (pickedIndex === -1 || !pickedTeacher) continue
           const subjId = pool.splice(pickedIndex, 1)[0]
 
-          const teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si)
-          table[day][si] = { subjectId: subjId, teacherId }
+          table[day][si] = { subjectId: subjId, teacherId: pickedTeacher }
           perDayCount[subjId] = (perDayCount[subjId] ?? 0) + 1
+          teacherLoad.set(pickedTeacher, (teacherLoad.get(pickedTeacher) ?? 0) + 1)
         }
       }
       result[c.key] = table
@@ -197,7 +201,8 @@ function buildDemand(subjects: ReturnType<typeof useSubjects>['subjects'], grade
   return arr
 }
 
-function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: string, gradeId: string, day: Day, slotIndex: number): string | undefined {
+function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: string, gradeId: string, day: Day, slotIndex: number, opts?: { commit?: boolean }): string | undefined {
+  const commit = opts?.commit ?? true
   const choices = teachers.filter(t => {
     const subs = getTeacherSubjectIds(t)
     if (!subs.includes(subjectId)) return false
@@ -213,7 +218,9 @@ function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: 
   })
   if (choices.length === 0) return undefined
   const pick = choices[Math.floor(Math.random() * choices.length)]
-  load.set(pick.id, (load.get(pick.id) ?? 0) + 1)
+  if (commit) {
+    load.set(pick.id, (load.get(pick.id) ?? 0) + 1)
+  }
   return pick.id
 }
 

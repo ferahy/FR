@@ -349,7 +349,7 @@ function SubjectModal({
 
   return (
     <Modal open={open} onClose={onClose} title={initial ? 'Dersi Düzenle' : 'Ders Ekle'} initialFocusRef={nameRef as React.RefObject<HTMLElement | null>}>
-      <form onSubmit={submit} className="form-grid">
+      <form onSubmit={submit} className="form-grid" noValidate>
         <label className="field">
           <span className="field-label">Ders Adı</span>
           <input
@@ -458,7 +458,6 @@ function SubjectModal({
                   <input
                     className={"input" + (errors.perDayMax ? ' field-error' : '')}
                     inputMode="numeric"
-                    pattern="\\d*"
                     placeholder="Sınırsız için Kapalı seçin"
                     value={state.perDayMax}
                     onChange={(e) => handlePerDayInput(e.target.value)}
@@ -492,7 +491,6 @@ function SubjectModal({
                   <input
                     className={"input" + (errors.maxConsecutive ? ' field-error' : '')}
                     inputMode="numeric"
-                    pattern="\\d*"
                     value={state.maxConsecutive}
                     onChange={(e) => handleMaxConsecutiveInput(e.target.value)}
                     onBlur={() => setMaxConsecutiveValue((value) => value)}
