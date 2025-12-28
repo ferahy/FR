@@ -7,7 +7,7 @@ import OgretmenProgramlari from './pages/OgretmenProgramlari'
 import TopNav from './layout/TopNav'
 import { useEffect, useState } from 'react'
 import { useHashRoute } from './shared/useHashRoute'
-import { loadFromCloud, saveToCloud } from './shared/cloudSync'
+import { saveToCloud } from './shared/cloudSync'
 
 export default function App() {
   const { page, navigate } = useHashRoute('okul')

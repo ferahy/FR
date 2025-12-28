@@ -14,7 +14,8 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": [],
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "types": ["vite/client", "babel__generator", "babel__template", "babel__traverse", "babel__core"],
 
     /* Linting */
     "strict": true,
