@@ -181,6 +181,7 @@ export default function Ogretmenler() {
         onClose={()=> setShowModal(false)}
         onSave={onSave}
         initial={editing ?? undefined}
+        key={editing?.id ?? 'new'}
         subjects={subjects.map(s=> ({ id: s.id, name: s.name }))}
         grades={gradesList}
         nameRef={nameRef}
@@ -221,31 +222,33 @@ function TeacherModal({ open, onClose, onSave, initial, subjects, grades, nameRe
   grades: { id: string; label: string }[]
   nameRef: React.RefObject<HTMLInputElement | null>
 }) {
-  const [state, setState] = useState<FormState>(() => ({
-    name: initial?.name ?? '',
-    subjectIds: getSubjectIds(initial),
-    minHours: initial?.minHours ? String(initial.minHours) : '15',
-    maxHours: initial?.maxHours ? String(initial.maxHours) : '30',
-    unavailable: initial?.unavailable ?? {},
-    preferredGradesMode: initial?.preferredGrades && initial.preferredGrades.length > 0 ? 'custom' : 'all',
-    preferredGrades: initial?.preferredGrades ?? [],
-  }))
+  const buildState = (init?: Teacher): FormState => ({
+    name: init?.name ?? '',
+    subjectIds: getSubjectIds(init),
+    minHours: init?.minHours ? String(init.minHours) : '15',
+    maxHours: init?.maxHours ? String(init.maxHours) : '30',
+    unavailable: init?.unavailable ?? {},
+    preferredGradesMode: init?.preferredGrades && init.preferredGrades.length > 0 ? 'custom' : 'all',
+    preferredGrades: init?.preferredGrades ?? [],
+  })
+
+  const [state, setState] = useState<FormState>(() => buildState(initial))
   // Multi-branch via two clean selects (primary + optional secondary)
   const [errors, setErrors] = useState<Record<string,string>>({})
   const prevId = useRef<string | undefined>(initial?.id)
   if (prevId.current !== initial?.id) {
     prevId.current = initial?.id
-    setState({
-      name: initial?.name ?? '',
-      subjectIds: getSubjectIds(initial),
-      minHours: initial?.minHours ? String(initial.minHours) : '15',
-      maxHours: initial?.maxHours ? String(initial.maxHours) : '30',
-      unavailable: initial?.unavailable ?? {},
-      preferredGradesMode: initial?.preferredGrades && initial.preferredGrades.length > 0 ? 'custom' : 'all',
-      preferredGrades: initial?.preferredGrades ?? [],
-    })
+    setState(buildState(initial))
     setErrors({})
   }
+  useEffect(() => {
+    if (open && !initial) {
+      prevId.current = undefined
+      setState(buildState(undefined))
+      setErrors({})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const addBtnRef = useRef<HTMLButtonElement | null>(null)
   const popRef = useRef<HTMLDivElement | null>(null)

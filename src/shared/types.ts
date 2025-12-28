@@ -2,6 +2,7 @@ export type SubjectRule = {
   perDayMax?: number
   syncAcrossSections?: boolean
   maxConsecutive?: number
+  minDays?: number
 }
 
 export type Subject = {

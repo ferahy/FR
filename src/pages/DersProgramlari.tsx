@@ -31,10 +31,12 @@ export default function DersProgramlari() {
       const gradeId = c.grade
       const demand = buildDemand(subjects, gradeId)
       const table: Record<Day, Cell[]> = Object.fromEntries(DAYS.map(d => [d, Array.from({ length: slots.length }, () => ({}) as Cell)])) as any
+      const placedDays: Record<string, Set<Day>> = {}
 
       // Fill day by day, slot by slot with randomized demand
       const pool = shuffle(demand)
-      for (const day of DAYS) {
+      for (let di = 0; di < DAYS.length; di++) {
+        const day = DAYS[di]
         let perDayCount: Record<string, number> = {}
         for (let si = 0; si < slots.length; si++) {
           // pick next subject that still has remaining and respects perDayMax, consecutive limits and has an available teacher
@@ -55,6 +57,15 @@ export default function DersProgramlari() {
               const consec = [prev, prev2, prev3].reduce((acc, v) => (v === subjId ? acc + 1 : acc), 0)
               if (consec >= maxConsec) continue
             }
+            // respect minimum spread across days
+            const minDays = rule?.minDays ?? 0
+            if (minDays > 0) {
+              const placed = placedDays[subjId] ?? new Set<Day>()
+              const futureDays = DAYS.length - di - 1
+              if (placed.has(day) && placed.size < minDays && futureDays < (minDays - placed.size)) {
+                continue
+              }
+            }
             const teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false })
             if (!teacherId) continue
             pickedIndex = i
@@ -67,6 +78,8 @@ export default function DersProgramlari() {
           table[day][si] = { subjectId: subjId, teacherId: pickedTeacher }
           perDayCount[subjId] = (perDayCount[subjId] ?? 0) + 1
           teacherLoad.set(pickedTeacher, (teacherLoad.get(pickedTeacher) ?? 0) + 1)
+          if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
+          placedDays[subjId].add(day)
         }
       }
       result[c.key] = table

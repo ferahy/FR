@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from '../components/Modal'
 import Toasts, { pushToast } from '../components/Toast'
 import { useGrades } from '../shared/useGrades'
@@ -16,6 +16,7 @@ type FormState = {
   enabledByGrade: Record<string, boolean>
   perDayMax: string
   maxConsecutive: string
+  minDays: string
   color: string
 }
 
@@ -59,6 +60,7 @@ export default function Dersler() {
       rule: {
         perDayMax: data.perDayMax ? Math.max(0, toInt(data.perDayMax)) : 0,
         maxConsecutive: data.maxConsecutive ? Math.max(0, toInt(data.maxConsecutive)) : 0,
+        minDays: data.minDays ? Math.max(0, toInt(data.minDays)) : 0,
       },
       color: data.color,
     }
@@ -123,6 +125,7 @@ export default function Dersler() {
                 ))}
                 <th>Günlük Üst Sınır</th>
                 <th>Üst üste</th>
+                <th>En az gün</th>
                 <th>Aksiyonlar</th>
               </tr>
             </thead>
@@ -137,6 +140,7 @@ export default function Dersler() {
                   ))}
                   <td>{s.rule?.perDayMax && s.rule.perDayMax > 0 ? s.rule.perDayMax : 'Sınırsız'}</td>
                   <td>{s.rule?.maxConsecutive && s.rule.maxConsecutive > 0 ? s.rule.maxConsecutive : '-'}</td>
+                  <td>{s.rule?.minDays && s.rule.minDays > 0 ? `${s.rule.minDays} gün` : '-'}</td>
                   <td>
                     <div className="row">
                       <button className="btn btn-outline" aria-label="Düzenle" onClick={() => openEdit(s)}>Düzenle</button>
@@ -182,6 +186,7 @@ export default function Dersler() {
                     <div className="meta">
                       <span className="pill">Günlük Üst: {s.rule?.perDayMax && s.rule.perDayMax > 0 ? s.rule.perDayMax : 'Sınırsız'}</span>
                       <span className="pill">Üst üste: {s.rule?.maxConsecutive && s.rule.maxConsecutive > 0 ? s.rule.maxConsecutive : '-'}</span>
+                      <span className="pill">En az gün: {s.rule?.minDays && s.rule.minDays > 0 ? `${s.rule.minDays}` : '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -201,6 +206,7 @@ export default function Dersler() {
         onClose={() => setShowModal(false)}
         onSave={onSave}
         initial={editing ?? undefined}
+        key={editing?.id ?? 'new'}
         grades={grades.map((g) => g.id)}
         colors={SUBJECT_COLORS}
         dailyLessons={dailyLessons}
@@ -248,19 +254,23 @@ function SubjectModal({
   colors: string[]
   dailyLessons: number
 }) {
-  const [state, setState] = useState<FormState>(() => ({
-    name: initial?.name ?? '',
-    weeklyHoursByGrade: Object.fromEntries(grades.map((g) => [g, String(initial?.weeklyHoursByGrade[g] ?? 0)])),
-    enabledByGrade: Object.fromEntries(grades.map((g) => [g, (initial?.weeklyHoursByGrade[g] ?? 0) > 0])),
-    perDayMax: initial?.rule?.perDayMax ? String(initial.rule.perDayMax) : '0',
-    maxConsecutive: initial?.rule?.maxConsecutive ? String(initial.rule.maxConsecutive) : '0',
-    color: initial?.color ?? '#93c5fd',
-  }))
+  const buildState = (init?: Subject): FormState => ({
+    name: init?.name ?? '',
+    weeklyHoursByGrade: Object.fromEntries(grades.map((g) => [g, String(init?.weeklyHoursByGrade[g] ?? 0)])),
+    enabledByGrade: Object.fromEntries(grades.map((g) => [g, (init?.weeklyHoursByGrade[g] ?? 0) > 0])),
+    perDayMax: init?.rule?.perDayMax ? String(init.rule.perDayMax) : '0',
+    maxConsecutive: init?.rule?.maxConsecutive ? String(init.rule.maxConsecutive) : '0',
+    minDays: init?.rule?.minDays ? String(init.rule.minDays) : '0',
+    color: init?.color ?? '#93c5fd',
+  })
+
+  const [state, setState] = useState<FormState>(() => buildState(initial))
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const perDayMaxLimit = Math.max(1, dailyLessons || 1)
   const maxConsecutiveLimit = Math.max(2, dailyLessons || 2)
+  const minDaysLimit = 5
 
   const sanitizeDigits = (value: string) => value.replace(/[^0-9]/g, '')
 
@@ -282,8 +292,18 @@ function SubjectModal({
     })
   }
 
+  const setMinDaysValue = (updater: (current: number) => number) => {
+    setState((s) => {
+      const base = s.minDays === '0' ? 1 : parseInt(s.minDays, 10)
+      const current = Number.isFinite(base) && base > 0 ? base : 1
+      const next = Math.max(1, Math.min(minDaysLimit, updater(current)))
+      return { ...s, minDays: String(next) }
+    })
+  }
+
   const stepPerDay = (delta: number) => setPerDayValue((value) => value + delta)
   const stepMaxConsecutive = (delta: number) => setMaxConsecutiveValue((value) => value + delta)
+  const stepMinDays = (delta: number) => setMinDaysValue((value) => value + delta)
 
   const handlePerDayInput = (raw: string) => {
     const digits = sanitizeDigits(raw)
@@ -301,23 +321,34 @@ function SubjectModal({
     }))
   }
 
+  const handleMinDaysInput = (raw: string) => {
+    const digits = sanitizeDigits(raw)
+    setState((s) => ({
+      ...s,
+      minDays: digits ? clampStr(digits, 1, minDaysLimit) : '1',
+    }))
+  }
+
   const isPerDayLimited = state.perDayMax !== '0'
   const isMaxConsecutiveLimited = state.maxConsecutive !== '0'
+  const isMinDaysLimited = state.minDays !== '0'
 
   // Reset when opening with different initial
   const prevId = useRef<string | undefined>(initial?.id)
   if (prevId.current !== initial?.id) {
     prevId.current = initial?.id
-    setState({
-      name: initial?.name ?? '',
-      weeklyHoursByGrade: Object.fromEntries(grades.map((g) => [g, String(initial?.weeklyHoursByGrade[g] ?? 0)])),
-      enabledByGrade: Object.fromEntries(grades.map((g) => [g, (initial?.weeklyHoursByGrade[g] ?? 0) > 0])),
-      perDayMax: initial?.rule?.perDayMax ? String(initial.rule.perDayMax) : '0',
-      maxConsecutive: initial?.rule?.maxConsecutive ? String(initial.rule.maxConsecutive) : '0',
-      color: initial?.color ?? '#93c5fd',
-    })
+    setState(buildState(initial))
     setErrors({})
   }
+
+  useEffect(() => {
+    if (open && !initial) {
+      prevId.current = undefined
+      setState(buildState(undefined))
+      setErrors({})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {}
@@ -333,6 +364,9 @@ function SubjectModal({
     }
     if (state.maxConsecutive !== '' && (!/^\d+$/.test(state.maxConsecutive) || parseInt(state.maxConsecutive, 10) < 0)) {
       errs.maxConsecutive = '0 veya daha büyük bir sayı'
+    }
+    if (state.minDays !== '' && (!/^\d+$/.test(state.minDays) || parseInt(state.minDays, 10) < 0)) {
+      errs.minDays = '0 veya daha büyük bir sayı'
     }
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -447,6 +481,7 @@ function SubjectModal({
         <div className="field-row">
           <div className="field" style={{ flex: '1 1 240px' }}>
             <span className="field-label">Günlük üst sınır</span>
+            <div className="help-text" style={{ marginTop: 4 }}><strong>Bilgi:</strong> Açıkken bu dersten gün içinde en fazla kaç saat olabileceğini belirler. Kapalıysa sınırsız.</div>
             <div className="segmented" role="group" aria-label="Günlük üst sınır modu">
               <button type="button" className={"seg " + (!isPerDayLimited ? 'active blocked' : '')} aria-pressed={!isPerDayLimited} onClick={() => setState((s) => ({ ...s, perDayMax: '0' }))}>Kapalı</button>
               <button type="button" className={"seg " + (isPerDayLimited ? 'active free' : '')} aria-pressed={isPerDayLimited} onClick={() => { if (!isPerDayLimited) setPerDayValue((value) => value) }}>Açık</button>
@@ -470,7 +505,6 @@ function SubjectModal({
                 {errors.perDayMax && <span id="err-pdm" className="error-text">{errors.perDayMax}</span>}
               </>
             )}
-            <div className="help-text">* Açık olduğunda, gün içinde bu dersten izin verilen en fazla saat sayısıdır. Kapalı seçilirse sınırsızdır.</div>
           </div>
 
           {/* Senkron alanı kaldırıldı */}
@@ -479,6 +513,7 @@ function SubjectModal({
         <div className="field-row">
           <div className="field" style={{ flex: '1 1 240px' }}>
             <span className="field-label">Üst üste ders limiti</span>
+            <div className="help-text" style={{ marginTop: 4 }}><strong>Bilgi:</strong> Açıkken bu dersten art arda en fazla kaç saat olabilir.</div>
             <div className="segmented" role="group" aria-label="Üst üste ders limiti modu">
               <button type="button" className={"seg " + (!isMaxConsecutiveLimited ? 'active blocked' : '')} aria-pressed={!isMaxConsecutiveLimited} onClick={() => setState((s) => ({ ...s, maxConsecutive: '0' }))}>Kapalı</button>
               <button type="button" className={"seg " + (isMaxConsecutiveLimited ? 'active free' : '')} aria-pressed={isMaxConsecutiveLimited} onClick={() => { if (!isMaxConsecutiveLimited) setMaxConsecutiveValue((value) => value) }}>Açık</button>
@@ -500,6 +535,36 @@ function SubjectModal({
                   <button type="button" aria-label="Arttır" onClick={() => stepMaxConsecutive(1)}>+</button>
                 </div>
                 {errors.maxConsecutive && <span id="err-mc" className="error-text">{errors.maxConsecutive}</span>}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="field-row">
+          <div className="field" style={{ flex: '1 1 240px' }}>
+            <span className="field-label">Haftada en az gün</span>
+            <div className="help-text" style={{ marginTop: 4 }}><strong>Bilgi:</strong> Açıkken haftalık saatler en az bu kadar farklı güne dağılır.</div>
+            <div className="segmented" role="group" aria-label="Haftada en az gün modu">
+              <button type="button" className={"seg " + (!isMinDaysLimited ? 'active blocked' : '')} aria-pressed={!isMinDaysLimited} onClick={() => setState((s) => ({ ...s, minDays: '0' }))}>Kapalı</button>
+              <button type="button" className={"seg " + (isMinDaysLimited ? 'active free' : '')} aria-pressed={isMinDaysLimited} onClick={() => { if (!isMinDaysLimited) setMinDaysValue((value) => value) }}>Açık</button>
+            </div>
+            {isMinDaysLimited && (
+              <>
+                <label className="field-label">En az kaç güne yayılmalı</label>
+                <div className="number-stepper">
+                  <button type="button" aria-label="Azalt" onClick={() => stepMinDays(-1)}>-</button>
+                  <input
+                    className={"input" + (errors.minDays ? ' field-error' : '')}
+                    inputMode="numeric"
+                    value={state.minDays}
+                    onChange={(e) => handleMinDaysInput(e.target.value)}
+                    onBlur={() => setMinDaysValue((value) => value)}
+                    aria-invalid={!!errors.minDays}
+                    aria-describedby={errors.minDays ? 'err-md' : undefined}
+                  />
+                  <button type="button" aria-label="Arttır" onClick={() => stepMinDays(1)}>+</button>
+                </div>
+                {errors.minDays && <span id="err-md" className="error-text">{errors.minDays}</span>}
               </>
             )}
           </div>
