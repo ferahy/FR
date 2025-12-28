@@ -22,7 +22,7 @@ type FormState = {
 
 export default function Dersler() {
   const grades = useGrades()
-  const { subjects, add, update, remove } = useSubjects()
+  const { subjects, add, update, remove, resetToDefaults } = useSubjects()
   const { dailyLessons } = useSchool()
 
   const [query, setQuery] = useState('')
@@ -107,6 +107,7 @@ export default function Dersler() {
               <option key={g.id} value={g.id}>{g.label}</option>
             ))}
           </select>
+          <button className="btn btn-outline" onClick={resetToDefaults}>Varsayılan Dersleri Yükle</button>
         </div>
       </div>
 

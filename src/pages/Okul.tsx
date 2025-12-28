@@ -7,11 +7,13 @@ type GradeConfig = {
 }
 
 type SchoolConfig = {
+  schoolName?: string
   dailyLessons: number
   grades: GradeConfig[]
 }
 
 const DEFAULT_CONFIG: SchoolConfig = {
+  schoolName: 'Okul',
   dailyLessons: 7,
   grades: [
     { grade: '5', sections: ['A', 'B'] },
@@ -31,6 +33,10 @@ export default function Okul() {
 
   const updateDailyLessons = (val: number) => {
     setConfig((c) => ({ ...c, dailyLessons: Math.max(1, Math.min(12, val)) }))
+  }
+
+  const updateSchoolName = (name: string) => {
+    setConfig((c) => ({ ...c, schoolName: name }))
   }
 
   const addNextGrade = () => {
@@ -69,6 +75,17 @@ export default function Okul() {
 
   return (
     <>
+      <section className="glass p-6" style={{ marginBottom: 16 }}>
+        <h3 className="section-title" style={{ marginTop: 0 }}>Okul Adı</h3>
+        <input
+          className="input"
+          value={config.schoolName ?? ''}
+          onChange={(e) => updateSchoolName(e.target.value)}
+          placeholder="Okul adını girin"
+          style={{ maxWidth: 360 }}
+        />
+      </section>
+
       <section className="glass p-6" style={{ marginBottom: 16 }}>
         <h3 className="section-title" style={{ marginTop: 0 }}>Günlük Ders Sayısı</h3>
         <div className="row">

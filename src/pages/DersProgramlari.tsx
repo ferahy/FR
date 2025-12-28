@@ -22,6 +22,7 @@ export default function DersProgramlari() {
 
   const [tables, setTables] = useLocalStorage<Record<ClassKey, Record<Day, Cell[]>>>('timetables', {})
   const [gradeFilter, setGradeFilter] = useState<string>('all')
+  const [showSheet, setShowSheet] = useState(false)
 
   const generate = () => {
     const result: Record<ClassKey, Record<Day, Cell[]>> = {}
@@ -107,7 +108,10 @@ export default function DersProgramlari() {
             {gradeOptions.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
           </select>
         </label>
-        <button className="btn btn-primary" onClick={generate}>Programları Oluştur</button>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline" onClick={() => setShowSheet(true)} disabled={!Object.keys(tables ?? {}).length}>Çarşaf Görünüm</button>
+          <button className="btn btn-primary" onClick={generate}>Programları Oluştur</button>
+        </div>
       </div>
 
       <div className="timetable-sections">
@@ -193,6 +197,67 @@ export default function DersProgramlari() {
           </div>
         ))}
       </div>
+
+      {showSheet && (
+        <div className="sheet-overlay">
+          <div className="sheet-backdrop" onClick={() => setShowSheet(false)} />
+          <div className="sheet-panel glass">
+            <div className="sheet-head">
+              <div>
+                <div className="title" style={{ margin: 0 }}>{school.schoolName || 'Okul'} - SINIFLARIN HAFTALIK DERS PROGRAMI</div>
+              </div>
+              <div className="row" style={{ gap: 8 }}>
+                <button className="btn btn-outline btn-sm" onClick={() => window.print()}>Yazdır / PDF</button>
+                <button className="btn btn-danger btn-sm" onClick={() => setShowSheet(false)}>Kapat</button>
+              </div>
+            </div>
+            <div className="sheet-body">
+              <table className="sheet-table">
+                <thead>
+                  <tr>
+                    <th rowSpan={2} className="sheet-class-head">Sınıf</th>
+                    {DAYS.map((d) => (
+                      <th key={d} colSpan={slots.length} className="sheet-day-head">{d}</th>
+                    ))}
+                  </tr>
+                  <tr>
+                    {DAYS.map((d) =>
+                      slots.map((s) => <th key={d + s} className="sheet-slot-head">{s.replace('S', '')}</th>)
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {classes.map((c) => (
+                    <tr key={c.key}>
+                      <td className="sheet-class">{c.grade}. Sınıf {c.section}</td>
+                      {DAYS.map((d) =>
+                        slots.map((_, si) => {
+                          const cell = tables[c.key]?.[d]?.[si]
+                          if (!cell?.subjectId) {
+                            return <td key={c.key + d + si} className="sheet-empty">—</td>
+                          }
+                          const subj = subjects.find((s) => s.id === cell.subjectId)
+                          const teacher = teachers.find((t) => t.id === cell.teacherId)
+                          return (
+                            <td key={c.key + d + si} className="sheet-slot">
+                              <div className="sheet-pill" title={`${subj?.name || ''} ${teacher?.name ? '— ' + teacher.name : ''}`}>
+                                <div className="sheet-text">
+                                  <div className="sheet-subj">{shortLabel(subj?.name)}</div>
+                                  {teacher?.name && <div className="sheet-teacher">{teacher.name}</div>}
+                                </div>
+                              </div>
+                            </td>
+                          )
+                        })
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -252,4 +317,10 @@ function getTeacherSubjectIds(t: Teacher): string[] {
   if (t.subjectIds && t.subjectIds.length) return t.subjectIds
   if (t.subjectId) return [t.subjectId]
   return []
+}
+
+function shortLabel(name?: string) {
+  if (!name) return ''
+  const clean = name.trim().toUpperCase()
+  return clean.length > 8 ? clean.slice(0, 8) : clean
 }

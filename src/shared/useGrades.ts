@@ -3,12 +3,14 @@ import { useLocalStorage } from './useLocalStorage'
 import type { GradeItem } from './types'
 
 type SchoolConfig = {
+  schoolName?: string
   dailyLessons: number
   grades: { grade: string; sections: string[] }[]
 }
 
 const DEFAULT_CONFIG: SchoolConfig = {
-  dailyLessons: 6,
+  schoolName: 'Okul',
+  dailyLessons: 7,
   grades: [
     { grade: '5', sections: ['A', 'B'] },
     { grade: '6', sections: ['A', 'B'] },
@@ -25,4 +27,3 @@ export function useGrades() {
   )
   return grades
 }
-
