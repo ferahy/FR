@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useLocalStorage } from '../shared/useLocalStorage'
+import { DEFAULT_GRADES } from '../shared/useSchool'
 
 type GradeConfig = {
   grade: string
@@ -76,6 +77,12 @@ export default function Okul() {
     }))
   }
 
+  const resetGrades = () => {
+    const ok = window.confirm('Varsayılan sınıf ve şube listesi yüklenecek. Emin misiniz?')
+    if (!ok) return
+    setConfig((c) => ({ ...c, grades: DEFAULT_GRADES }))
+  }
+
   const removeSection = (grade: string, section: string) => {
     setConfig((c) => ({
       ...c,
@@ -146,7 +153,19 @@ export default function Okul() {
           <div className="muted">Toplam Şube: {totalSections}</div>
         </div>
 
-        
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <button className="btn btn-primary" onClick={addNextGrade}>
+            Sınıf Ekle
+          </button>
+          <button className="btn btn-outline" onClick={resetGrades}>
+            Varsayılan Şubeleri Getir
+          </button>
+          {config.grades.length > 0 && (
+            <button className="btn btn-outline btn-danger" onClick={() => setConfig((c) => ({ ...c, grades: [] }))}>
+              Hepsini Sil
+            </button>
+          )}
+        </div>
 
         <div className="grade-list">
           {config.grades.length === 0 && (
@@ -177,12 +196,6 @@ export default function Okul() {
               </div>
             </div>
           ))}
-        </div>
-
-        <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
-          <button className="btn btn-primary" onClick={addNextGrade}>
-            Sınıf Ekle
-          </button>
         </div>
       </section>
     </>

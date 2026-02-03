@@ -7,11 +7,18 @@ type SchoolConfig = {
   grades: { grade: string; sections: string[] }[]
 }
 
+export const DEFAULT_GRADES: { grade: string; sections: string[] }[] = [
+  { grade: '5', sections: ['A', 'B'] },
+  { grade: '6', sections: ['A', 'B'] },
+  { grade: '7', sections: ['A', 'B'] },
+  { grade: '8', sections: ['A', 'B'] },
+]
+
 const DEFAULT_CONFIG: SchoolConfig = {
   schoolName: 'Hasyurt Ortaokulu',
   principalName: 'Nurten HOYRAZLI',
   dailyLessons: 7,
-  grades: [],
+  grades: DEFAULT_GRADES,
 }
 
 export function useSchool() {
