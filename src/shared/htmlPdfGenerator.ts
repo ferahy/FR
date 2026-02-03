@@ -360,6 +360,12 @@ export function generateTeacherHandbookHTML(
   const today = new Date().toLocaleDateString('tr-TR')
   const principalName = principalNameFromSchool && principalNameFromSchool.trim() ? principalNameFromSchool : 'Nurten HOYRAZLI'
   const times = slotTimes && slotTimes.length ? slotTimes : LESSON_TIMES
+  let totalHours = 0
+  DAYS.forEach(day => {
+    schedule[day]?.forEach(cell => {
+      if (cell.subjectId) totalHours++
+    })
+  })
 
   return `<!DOCTYPE html>
 <html lang="tr">
@@ -393,16 +399,19 @@ export function generateTeacherHandbookHTML(
     .cell-subject { font-weight: bold; font-size: 10pt; line-height: 1.1; }
     .cell-class { font-size: 9pt; line-height: 1.1; margin-top: 0.5mm; }
 
-    .salary-row { width: 170mm; margin: 0 auto 6mm auto; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2mm; }
-    .salary-box { border: 0.3mm solid #000; padding: 3mm 4mm; font-weight: bold; font-size: 10pt; display: flex; align-items: center; gap: 4mm; }
-    .salary-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; }
+    .pay-row { width: 170mm; margin: 0 auto 4mm auto; display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 6mm; font-size: 10pt; }
+    .pay-item { display: flex; align-items: center; gap: 4mm; }
+    .pay-label { font-weight: bold; white-space: nowrap; }
+    .pay-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; min-width: 28mm; }
+    .pay-line.value { padding: 0 2mm 1mm 2mm; line-height: 1.2; }
 
     .duty-row { width: 170mm; margin: 0 auto 10mm auto; display: flex; align-items: center; gap: 4mm; font-size: 10pt; }
     .duty-label { font-weight: bold; }
-    .duty-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; }
+    .duty-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; min-width: 80mm; }
 
-    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 2mm; padding-top: 6mm; }
+    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 3mm; padding-top: 12mm; }
     .receipt-title { font-weight: bold; }
+    .receipt-line { border-bottom: 0.3mm solid #000; min-width: 40mm; height: 0; display: inline-block; }
 
     @media print { body { background: white; } .page { margin: 0; padding: 12mm; } }
   </style>
@@ -456,10 +465,19 @@ export function generateTeacherHandbookHTML(
       </tbody>
     </table>
 
-    <div class="salary-row">
-      <div class="salary-box">MAAŞ : <span class="salary-line"></span></div>
-      <div class="salary-box">ÜCRET : <span class="salary-line"></span></div>
-      <div class="salary-box">TOPLAM : <span class="salary-line"></span></div>
+    <div class="pay-row">
+      <div class="pay-item">
+        <span class="pay-label">MAAŞ :</span>
+        <span class="pay-line value">${totalHours || ''}</span>
+      </div>
+      <div class="pay-item">
+        <span class="pay-label">ÜCRET :</span>
+        <span class="pay-line"></span>
+      </div>
+      <div class="pay-item">
+        <span class="pay-label">TOPLAM :</span>
+        <span class="pay-line value">${totalHours || ''}</span>
+      </div>
     </div>
 
     <div class="duty-row">
@@ -468,8 +486,8 @@ export function generateTeacherHandbookHTML(
     </div>
 
     <div class="receipt">
-      <div class="receipt-title">Aslını Aldım</div>
-      <div>${today}</div>
+      <div class="receipt-title">ASLINI ALDIM</div>
+      <div>TARİH : <span class="receipt-line"></span></div>
     </div>
   </div>
 </body>
