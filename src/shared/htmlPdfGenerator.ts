@@ -352,27 +352,11 @@ export function generateClassHandbookHTML(
 export function generateTeacherHandbookHTML(
   teacher: Teacher,
   schedule: TeacherSchedule,
-  subjects: Subject[],
+  _subjects: Subject[],
   schoolName: string,
   principalNameFromSchool?: string,
   slotTimes?: string[]
 ): string {
-  const subjectCounts = new Map<string, number>()
-  DAYS.forEach(day => {
-    schedule[day]?.forEach(cell => {
-      if (cell.subjectId) {
-        subjectCounts.set(cell.subjectId, (subjectCounts.get(cell.subjectId) || 0) + 1)
-      }
-    })
-  })
-
-  const subjectList = Array.from(subjectCounts.entries())
-    .map(([id, hours]) => {
-      const subj = subjects.find(s => s.id === id)
-      return { name: subj?.name || '', hours }
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
-
   const today = new Date().toLocaleDateString('tr-TR')
   const principalName = principalNameFromSchool && principalNameFromSchool.trim() ? principalNameFromSchool : 'Nurten HOYRAZLI'
   const times = slotTimes && slotTimes.length ? slotTimes : LESSON_TIMES
@@ -409,11 +393,16 @@ export function generateTeacherHandbookHTML(
     .cell-subject { font-weight: bold; font-size: 10pt; line-height: 1.1; }
     .cell-class { font-size: 9pt; line-height: 1.1; margin-top: 0.5mm; }
 
-    .summary { width: auto; max-width: 170mm; margin: 0 auto; font-size: 10pt; display: flex; flex-direction: column; gap: 1mm; }
-    .summary-header, .summary-row { display: grid; grid-template-columns: max-content 12mm 55mm 10mm; column-gap: 1.5mm; align-items: center; padding: 0 1mm; line-height: 1.2; }
-    .summary-header { font-weight: bold; margin-bottom: 1mm; }
-    .summary-header .col2, .summary-row .col2, .summary-header .col4, .summary-row .col4 { text-align: center; }
-    .summary-row .col3 { text-transform: uppercase; }
+    .salary-row { width: 170mm; margin: 0 auto 6mm auto; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2mm; }
+    .salary-box { border: 0.3mm solid #000; padding: 3mm 4mm; font-weight: bold; font-size: 10pt; display: flex; align-items: center; gap: 4mm; }
+    .salary-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; }
+
+    .duty-row { width: 170mm; margin: 0 auto 10mm auto; display: flex; align-items: center; gap: 4mm; font-size: 10pt; }
+    .duty-label { font-weight: bold; }
+    .duty-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; }
+
+    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 2mm; padding-top: 6mm; }
+    .receipt-title { font-weight: bold; }
 
     @media print { body { background: white; } .page { margin: 0; padding: 12mm; } }
   </style>
@@ -467,21 +456,20 @@ export function generateTeacherHandbookHTML(
       </tbody>
     </table>
 
-    <div class="summary">
-      <div class="summary-header">
-        <div class="col1">Dersin Adı</div>
-        <div class="col2">HDS</div>
-        <div class="col3">Öğretmenin Adı</div>
-        <div class="col4">Derslik</div>
-      </div>
-      ${subjectList.map(item => `
-      <div class="summary-row">
-        <div class="col1">${item.name}</div>
-        <div class="col2">${item.hours}</div>
-        <div class="col3">${teacher.name}</div>
-        <div class="col4"></div>
-      </div>
-      `).join('')}
+    <div class="salary-row">
+      <div class="salary-box">MAAŞ : <span class="salary-line"></span></div>
+      <div class="salary-box">ÜCRET : <span class="salary-line"></span></div>
+      <div class="salary-box">TOPLAM : <span class="salary-line"></span></div>
+    </div>
+
+    <div class="duty-row">
+      <span class="duty-label">NÖBET GÜNÜ VE YERİ :</span>
+      <span class="duty-line"></span>
+    </div>
+
+    <div class="receipt">
+      <div class="receipt-title">Aslını Aldım</div>
+      <div>${today}</div>
     </div>
   </div>
 </body>
