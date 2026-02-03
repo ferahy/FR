@@ -203,7 +203,7 @@ body{
 /* Always stacked vertically; remove wider multi-columns */
 
 /* Grade sections */
-.timetable-sections{display:flex;flex-direction:column;gap:16px;margin-top:12px}
+.timetable-sections{display:flex;flex-direction:column;gap:16px;margin-top:24px}
 
 /* Mobile timetable cards */
 .tt-cards{display:none}
