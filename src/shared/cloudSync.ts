@@ -13,8 +13,13 @@ type CloudState = {
   timetables?: any
 }
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+// Build-time env veya fallback (GitHub Pages için gömülü)
+const supabaseUrl =
+  (import.meta.env.VITE_SUPABASE_URL as string | undefined) ||
+  'https://lyumqawteplssqjqtvwp.supabase.co'
+const supabaseAnonKey =
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5dW1xYXd0ZXBsc3NxanF0dndwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY5MzkzNzEsImV4cCI6MjA4MjUxNTM3MX0.Vyqvrn_nWFZs22EmPV3LjaN8bkfsu3WaW20x7UL-JXQ'
 
 function getClient(): SupabaseClient | null {
   if (!supabaseUrl || !supabaseAnonKey) return null
