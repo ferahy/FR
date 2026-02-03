@@ -146,8 +146,9 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     // Otomatik ilk yükleme (sadece bu sekmede bir kez)
+    const skip = sessionStorage.getItem('skipCloudLoad')
     const loaded = sessionStorage.getItem('cloudLoadedOnce')
-    if (loaded === '1') return
+    if (skip === '1' || loaded === '1') return
     ;(async () => {
       setSyncing('down')
       const res = await loadFromCloud()
@@ -189,6 +190,7 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
     const auth = localStorage.getItem('authSession')
     localStorage.clear()
     if (auth === 'ok') localStorage.setItem('authSession', 'ok')
+    sessionStorage.setItem('skipCloudLoad', '1')
     sessionStorage.removeItem('cloudLoadedOnce')
     window.location.reload()
   }
