@@ -403,13 +403,17 @@ export function generateTeacherHandbookHTML(
     .pay-item { display: flex; align-items: center; gap: 4mm; }
     .pay-label { font-weight: bold; white-space: nowrap; }
 
+    .meta-row { width: 170mm; margin: 0 auto 4mm auto; display: grid; grid-template-columns: auto 1fr auto 1fr; column-gap: 4mm; font-size: 10pt; align-items: center; }
+    .meta-label { font-weight: bold; white-space: nowrap; }
+    .meta-line { border-bottom: 0.3mm solid #000; height: 0; min-width: 30mm; }
+
     .duty-row { width: 170mm; margin: 0 auto 10mm auto; display: flex; align-items: center; gap: 4mm; font-size: 10pt; }
     .duty-label { font-weight: bold; }
     .duty-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; min-width: 80mm; }
 
-    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 3mm; padding-top: 12mm; }
+    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 2mm; padding-top: 6mm; }
     .receipt-title { font-weight: bold; }
-    .receipt-line { border-bottom: 0.3mm solid #000; min-width: 40mm; height: 0; display: inline-block; }
+    .receipt-date { white-space: nowrap; }
 
     @media print { body { background: white; } .page { margin: 0; padding: 12mm; } }
   </style>
@@ -483,9 +487,16 @@ export function generateTeacherHandbookHTML(
       <span class="duty-line"></span>
     </div>
 
+    <div class="meta-row">
+      <span class="meta-label">Sınıf Reh.Öğretmenliği :</span>
+      <span class="meta-line"></span>
+      <span class="meta-label">Eğitsel Kolu :</span>
+      <span class="meta-line"></span>
+    </div>
+
     <div class="receipt">
       <div class="receipt-title">ASLINI ALDIM</div>
-      <div>TARİH : <span class="receipt-line"></span><span class="receipt-line"></span><span class="receipt-line"></span></div>
+      <div class="receipt-date">TARİH : __/__/____</div>
     </div>
   </div>
 </body>
