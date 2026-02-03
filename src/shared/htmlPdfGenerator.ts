@@ -6,7 +6,7 @@ const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
 const LESSON_TIMES = ['08:40', '09:35', '10:35', '11:30', '13:10', '14:05', '15:00']
 
 function getSubjectAbbr(name: string): string {
-  const upper = name.toUpperCase()
+  const upper = name.toLocaleUpperCase('tr-TR')
   if (upper.includes('MATEMATİK')) return 'MAT'
   if (upper.includes('TÜRKÇE')) return 'TURKC'
   if (upper.includes('FEN')) return 'FEN B'
@@ -34,9 +34,14 @@ function getSubjectAbbr(name: string): string {
 }
 
 function getTeacherAbbr(name: string): string {
-  const parts = name.trim().split(' ')
-  if (parts.length === 1) return parts[0].slice(0, 3).toUpperCase()
-  return parts.map(p => p[0].toUpperCase()).join('.')
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .map(p => p.toLocaleUpperCase('tr-TR'))
+    .filter(Boolean)
+  if (parts.length === 0) return ''
+  if (parts.length === 1) return parts[0].slice(0, 3)
+  return parts.map(p => p[0]).join('.') + '.'
 }
 
 export function generateClassHandbookHTML(
