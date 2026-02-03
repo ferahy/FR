@@ -78,8 +78,6 @@ export default function Okul() {
   }
 
   const resetGrades = () => {
-    const ok = window.confirm('Varsayılan sınıf ve şube listesi yüklenecek. Emin misiniz?')
-    if (!ok) return
     setConfig((c) => ({ ...c, grades: DEFAULT_GRADES }))
   }
 
