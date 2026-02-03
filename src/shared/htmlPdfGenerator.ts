@@ -402,8 +402,6 @@ export function generateTeacherHandbookHTML(
     .pay-row { width: 170mm; margin: 0 auto 4mm auto; display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 6mm; font-size: 10pt; }
     .pay-item { display: flex; align-items: center; gap: 4mm; }
     .pay-label { font-weight: bold; white-space: nowrap; }
-    .pay-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; min-width: 28mm; }
-    .pay-line.value { padding: 0 2mm 1mm 2mm; line-height: 1.2; }
 
     .duty-row { width: 170mm; margin: 0 auto 10mm auto; display: flex; align-items: center; gap: 4mm; font-size: 10pt; }
     .duty-label { font-weight: bold; }
@@ -468,7 +466,7 @@ export function generateTeacherHandbookHTML(
     <div class="pay-row">
       <div class="pay-item">
         <span class="pay-label">MAAŞ :</span>
-        <span class="pay-line value">${totalHours || ''}</span>
+        <span>${totalHours || ''}</span>
       </div>
       <div class="pay-item">
         <span class="pay-label">ÜCRET :</span>
@@ -476,7 +474,7 @@ export function generateTeacherHandbookHTML(
       </div>
       <div class="pay-item">
         <span class="pay-label">TOPLAM :</span>
-        <span class="pay-line value">${totalHours || ''}</span>
+        <span>${totalHours || ''}</span>
       </div>
     </div>
 
@@ -487,7 +485,7 @@ export function generateTeacherHandbookHTML(
 
     <div class="receipt">
       <div class="receipt-title">ASLINI ALDIM</div>
-      <div>TARİH : <span class="receipt-line"></span></div>
+      <div>TARİH : <span class="receipt-line"></span><span class="receipt-line"></span><span class="receipt-line"></span></div>
     </div>
   </div>
 </body>
