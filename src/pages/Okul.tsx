@@ -146,9 +146,9 @@ export default function Okul() {
       </section>
 
       <section className="glass p-6">
-        <div className="section-head">
-          <h3 className="section-title" style={{ marginTop: 0 }}>Sınıflar ve Şubeler</h3>
-          <div className="muted">Toplam Şube: {totalSections}</div>
+        <div className="section-head" style={{ alignItems: 'flex-start', gap: 8 }}>
+          <h3 className="section-title" style={{ marginTop: 0, marginBottom: 4 }}>Sınıflar ve Şubeler</h3>
+          <div className="muted" style={{ marginTop: 4 }}>Toplam Şube: {totalSections}</div>
         </div>
 
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
