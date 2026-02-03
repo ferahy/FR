@@ -38,7 +38,7 @@ export default function DersProgramlari() {
         tables[c.key],
         subjects,
         teachers,
-        school.schoolName || 'Okul',
+        school.schoolName || 'Hasyurt Ortaokulu',
         school.principalName
       ))
       .join('<div style="page-break-after: always;"></div>')
@@ -258,7 +258,7 @@ export default function DersProgramlari() {
           <div className="sheet-panel glass">
             <div className="sheet-head">
               <div>
-                <div className="title" style={{ margin: 0 }}>{school.schoolName || 'Okul'} - SINIFLARIN HAFTALIK DERS PROGRAMI</div>
+                <div className="title" style={{ margin: 0 }}>{school.schoolName || 'Hasyurt Ortaokulu'} - SINIFLARIN HAFTALIK DERS PROGRAMI</div>
               </div>
               <div className="row" style={{ gap: 8 }}>
                 <button className="btn btn-outline btn-sm" onClick={() => window.print()}>Yazdır / PDF</button>

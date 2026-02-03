@@ -14,7 +14,7 @@ type SchoolConfig = {
 }
 
 const DEFAULT_CONFIG: SchoolConfig = {
-  schoolName: 'Okul',
+  schoolName: 'Hasyurt Ortaokulu',
   principalName: 'Nurten HOYRAZLI',
   dailyLessons: 7,
   grades: [

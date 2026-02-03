@@ -39,7 +39,7 @@ export default function OgretmenProgramlari() {
         t,
         teacherSchedules[t.id],
         subjects,
-        school.schoolName || 'Okul',
+        school.schoolName || 'Hasyurt Ortaokulu',
         school.principalName,
         slotTimes
       ))
