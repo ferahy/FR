@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useLocalStorage } from '../shared/useLocalStorage'
 
 type GradeConfig = {
@@ -27,6 +27,14 @@ const DEFAULT_CONFIG: SchoolConfig = {
 
 export default function Okul() {
   const [config, setConfig] = useLocalStorage<SchoolConfig>('schoolConfig', DEFAULT_CONFIG)
+
+  // Eski kayıt "Okul" ise varsayılana düzelt
+  useEffect(() => {
+    const name = config.schoolName?.trim()
+    if (!name || name === 'Okul') {
+      setConfig((c) => ({ ...c, schoolName: 'Hasyurt Ortaokulu' }))
+    }
+  }, [config.schoolName, setConfig])
 
   const totalSections = useMemo(
     () => config.grades.reduce((acc, g) => acc + g.sections.length, 0),
