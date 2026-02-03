@@ -71,7 +71,7 @@ export function formatClassName(classKey: string): string {
 
 // Ders kısaltmaları (PDF'lerdeki gibi)
 export function getSubjectAbbreviation(subjectName: string): string {
-  const upper = subjectName.trim().toUpperCase()
+  const upper = subjectName.trim().toLocaleUpperCase('tr-TR')
   if (!upper) return ''
 
   const map: Array<{ match: RegExp; abbr: string }> = [
