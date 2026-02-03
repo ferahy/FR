@@ -71,53 +71,33 @@ export function formatClassName(classKey: string): string {
 
 // Ders kısaltmaları (PDF'lerdeki gibi)
 export function getSubjectAbbreviation(subjectName: string): string {
-  const map: Record<string, string> = {
-    'MATEMATİK': 'MAT',
-    'TÜRKÇE': 'TURKC',
-    'TÜRKÇE56': 'TURKC',
-    'TÜRKÇE78': 'TÜRKC',
-    'FEN BİLİMLERİ': 'FEN B',
-    'FEN BİLİMLERİ5678': 'FEN B',
-    'İNGİLİZCE': 'İNG.',
-    'İNGİLİZCE56': 'İNG.',
-    'İNGİLİZCE78': 'İNG.',
-    'SOSYAL BİLGİLER': 'SOS7',
-    'SOSYAL BİLGİLER567': 'SOS B',
-    'DİN KÜLTÜRÜ': 'DİN',
-    'BEDEN EĞİTİMİ': 'BED',
-    'MÜZİK': 'MÜZ',
-    'GÖRSEL SANATLAR': 'GÖRSE',
-    'BİLİŞİM TEKNOLOJİLERİ': 'BİL.T',
-    'TEKNOLOJİ TASARIM': 'TTAS',
-    'REHBERLİK': 'REH',
-    'REHBERLİK VE KARİYER': 'REH',
-    'S. İNGİLİZCE': 'S.İNG',
-    'S. MASAL VE DESTANLARI': 'SMD',
-    'S. PEYGAMBERİMİZİN HAY': 'S.P.H',
-    'S. KÜLTÜR VE MED': 'S.KMY',
-    'S. KURAN': 'S.KUR',
-    'S. MATEMATİK': 'S.M.B',
-    'S. MEDYA': 'MED',
-    'S. AFET': 'S.A.B',
-    'S. OYUN': 'S.O.E',
-    'S. ÇEVRE': 'S.ÇİD',
-    'İNK TARİHİ8': 'İNK8'
+  const upper = subjectName.trim().toUpperCase()
+  if (!upper) return ''
+
+  const map: Array<{ match: RegExp; abbr: string }> = [
+    { match: /MATEMATİK/, abbr: 'MAT' },
+    { match: /TÜRKÇE/, abbr: 'TÜRKÇ' },
+    { match: /FEN\s*BİL/, abbr: 'FEN B' },
+    { match: /İNGİLİZCE/, abbr: 'İNG.' },
+    { match: /SOSYAL/, abbr: 'SOS' },
+    { match: /DİN\s*KÜLT/, abbr: 'DİN' },
+    { match: /BEDEN/, abbr: 'BED' },
+    { match: /MÜZİK/, abbr: 'MÜZ' },
+    { match: /GÖRSEL/, abbr: 'GÖR' },
+    { match: /BİLİŞİM/, abbr: 'BİL.T' },
+    { match: /TEKNOLOJ.*TASARIM/, abbr: 'TTAS' },
+    { match: /REHBERLİK/, abbr: 'REH' },
+    { match: /İNK(ILAP)?\s*TAR/, abbr: 'İNK' },
+    { match: /TEKNOLOJ/, abbr: 'TEKNO' },
+    // Seçmeli
+    { match: /^S\./, abbr: upper.slice(0, 5) },
+  ]
+
+  for (const { match, abbr } of map) {
+    if (match.test(upper)) return abbr
   }
 
-  const upper = subjectName.toUpperCase()
-
-  // Tam eşleşme ara
-  if (map[upper]) return map[upper]
-
-  // Kısmi eşleşme ara
-  for (const [key, value] of Object.entries(map)) {
-    if (upper.includes(key) || key.includes(upper)) {
-      return value
-    }
-  }
-
-  // Bulamazsa ilk 6 karakteri al
-  return subjectName.slice(0, 6).toUpperCase()
+  return upper.slice(0, 6)
 }
 
 // Öğretmen kısaltması (örn: "MUSTAFA GÜLMEZ" -> "M.G.")
