@@ -13,12 +13,7 @@ const DEFAULT_CONFIG: SchoolConfig = {
   schoolName: 'Hasyurt Ortaokulu',
   principalName: 'Nurten HOYRAZLI',
   dailyLessons: 7,
-  grades: [
-    { grade: '5', sections: ['A', 'B'] },
-    { grade: '6', sections: ['A', 'B'] },
-    { grade: '7', sections: ['A', 'B'] },
-    { grade: '8', sections: ['A', 'B'] },
-  ],
+  grades: [],
 }
 
 export function useGrades() {
