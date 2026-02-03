@@ -152,7 +152,7 @@ export default function DersProgramlari() {
 
   return (
     <>
-      <div className="topbar glass p-6" style={{ justifyContent: 'space-between', gap: 12 }}>
+      <div className="topbar glass p-6" style={{ justifyContent: 'space-between', gap: 12, marginBottom: 24 }}>
         <label className="field" style={{ margin: 0 }}>
           <span className="field-label">Sınıf Filtresi</span>
           <select className="select" value={gradeFilter} onChange={(e)=> setGradeFilter(e.target.value)}>
