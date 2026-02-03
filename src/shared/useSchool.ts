@@ -21,5 +21,11 @@ const DEFAULT_CONFIG: SchoolConfig = {
 
 export function useSchool() {
   const [cfg] = useLocalStorage<SchoolConfig>('schoolConfig', DEFAULT_CONFIG)
-  return cfg
+
+  const safeName =
+    cfg.schoolName && cfg.schoolName.trim() && cfg.schoolName.trim() !== 'Okul'
+      ? cfg.schoolName.trim()
+      : 'Hasyurt Ortaokulu'
+
+  return { ...cfg, schoolName: safeName }
 }
