@@ -183,6 +183,16 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  const doReset = () => {
+    const ok = window.confirm('Tüm veriler sıfırlanacak. Emin misiniz?')
+    if (!ok) return
+    const auth = localStorage.getItem('authSession')
+    localStorage.clear()
+    if (auth === 'ok') localStorage.setItem('authSession', 'ok')
+    sessionStorage.removeItem('cloudLoadedOnce')
+    window.location.reload()
+  }
+
   return (
     <div className="glass p-4" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
@@ -192,6 +202,7 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
       <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn btn-outline btn-sm" onClick={doSave} disabled={syncing !== 'idle'}>Buluta Kaydet</button>
         <button className="btn btn-outline btn-sm" onClick={doLoad} disabled={syncing !== 'idle'}>Buluttan Yükle</button>
+        <button className="btn btn-danger btn-sm" onClick={doReset} disabled={syncing !== 'idle'}>Sıfırla</button>
         <button className="btn btn-outline btn-sm" onClick={onLogout}>Çıkış</button>
       </div>
     </div>
