@@ -276,7 +276,7 @@ export function generateClassHandbookHTML(
     <!-- AÇIKLAMA + MÜDÜR -->
     <div class="message-block">
       <div class="message">
-        <p>2025 - 2026 Öğretim Yılında 12.12.2025 tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
+        <p>2025 - 2026 Öğretim Yılında ${today} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
         <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
       </div>
       <div class="signature">
