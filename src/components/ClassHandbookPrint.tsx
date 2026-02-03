@@ -52,15 +52,16 @@ export default function ClassHandbookPrint({ tables, subjects, teachers, classes
               <div><strong>Sınıf Öğretmeni :</strong></div>
             </div>
 
-            {/* Official Message */}
-            <div className="print-message">
-              <p>2025 - 2026 Öğretim Yılında {effectiveDate} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
-              <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
-            </div>
-
-            <div className="print-signature">
-              <div>Nurten HOYRAZLI</div>
-              <div>Müdür</div>
+            {/* Official Message + Signature block */}
+            <div className="print-letter-block">
+              <div className="print-message">
+                <p>2025 - 2026 Öğretim Yılında {effectiveDate} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
+                <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
+              </div>
+              <div className="print-signature">
+                <div>Nurten HOYRAZLI</div>
+                <div>Müdür</div>
+              </div>
             </div>
 
             {/* Timetable */}
