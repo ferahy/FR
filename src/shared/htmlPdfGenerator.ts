@@ -407,11 +407,11 @@ export function generateTeacherHandbookHTML(
     .meta-label { font-weight: bold; white-space: nowrap; }
     .meta-line { border-bottom: 0.3mm solid #000; height: 0; min-width: 30mm; }
 
-    .duty-row { width: 170mm; margin: 0 auto 10mm auto; display: flex; align-items: center; gap: 4mm; font-size: 10pt; }
+    .duty-row { width: 170mm; margin: 0 auto 8mm auto; display: flex; align-items: flex-end; gap: 4mm; font-size: 10pt; }
     .duty-label { font-weight: bold; }
-    .duty-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; min-width: 80mm; }
+    .duty-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; min-width: 80mm; margin-bottom: -1mm; }
 
-    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 2mm; padding-top: 6mm; }
+    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 1mm; padding-top: 4mm; }
     .receipt-title { font-weight: bold; }
     .receipt-date { white-space: nowrap; }
 
