@@ -7,7 +7,7 @@ import OgretmenProgramlari from './pages/OgretmenProgramlari'
 import TopNav from './layout/TopNav'
 import { useEffect, useState } from 'react'
 import { useHashRoute } from './shared/useHashRoute'
-import { saveToCloud } from './shared/cloudSync'
+import { saveToCloud, loadFromCloud } from './shared/cloudSync'
 
 export default function App() {
   const { page, navigate } = useHashRoute('okul')
@@ -152,6 +152,20 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
     setMessage(res.ok ? 'Buluta kaydedildi' : `Hata: ${res.error}`)
   }
 
+  const doLoad = async () => {
+    setMessage(null)
+    setSyncing('down')
+    const res = await loadFromCloud()
+    setSyncing('idle')
+    if (res.ok) {
+      setMessage('Buluttan yüklendi')
+      // Yerel state'ler localStorage’dan yeniden okunsun diye sayfayı yenile
+      window.location.reload()
+    } else {
+      setMessage(`Hata: ${res.error}`)
+    }
+  }
+
   return (
     <div className="glass p-4" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
@@ -160,6 +174,7 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
       </div>
       <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn btn-outline btn-sm" onClick={doSave} disabled={syncing !== 'idle'}>Buluta Kaydet</button>
+        <button className="btn btn-outline btn-sm" onClick={doLoad} disabled={syncing !== 'idle'}>Buluttan Yükle</button>
         <button className="btn btn-outline btn-sm" onClick={onLogout}>Çıkış</button>
       </div>
     </div>
