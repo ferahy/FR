@@ -48,7 +48,7 @@ export function generateClassHandbookHTML(
 ): string {
   const [grade, section] = classKey.split('-')
   const today = new Date().toLocaleDateString('tr-TR')
-  const principalName = 'Ferah'
+  const principalName = 'Nurten HOYRAZLI'
 
   // Calculate subject counts
   const subjectCounts = new Map<string, { name: string; hours: number; teacherName: string }>()
@@ -126,7 +126,7 @@ export function generateClassHandbookHTML(
 
     /* AÇIKLAMA + MÜDÜR - 20mm */
     .message-block {
-      min-height: 24mm;
+      min-height: 28mm;
       display: flex;
       justify-content: space-between;
       align-items: stretch;
@@ -134,14 +134,20 @@ export function generateClassHandbookHTML(
     }
 
     .message {
-      width: 110mm;
+      width: 140mm;
       font-size: 10.5pt;
       line-height: 1.2;
       text-align: justify;
     }
 
+    .message p {
+      margin: 1mm 0;
+      white-space: nowrap;
+      letter-spacing: 0.1px;
+    }
+
     .signature {
-      width: 55mm;
+      width: 40mm;
       text-align: right;
       font-weight: bold;
       font-size: 10.5pt;
