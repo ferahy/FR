@@ -44,11 +44,12 @@ export function generateClassHandbookHTML(
   schedule: ClassSchedule,
   subjects: Subject[],
   teachers: Teacher[],
-  schoolName: string
+  schoolName: string,
+  principalNameFromSchool?: string
 ): string {
   const [grade, section] = classKey.split('-')
   const today = new Date().toLocaleDateString('tr-TR')
-  const principalName = 'Nurten HOYRAZLI'
+  const principalName = principalNameFromSchool && principalNameFromSchool.trim() ? principalNameFromSchool : 'Nurten HOYRAZLI'
 
   // Calculate subject counts
   const subjectCounts = new Map<string, { name: string; hours: number; teacherName: string }>()

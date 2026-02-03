@@ -4,12 +4,14 @@ import type { GradeItem } from './types'
 
 type SchoolConfig = {
   schoolName?: string
+  principalName?: string
   dailyLessons: number
   grades: { grade: string; sections: string[] }[]
 }
 
 const DEFAULT_CONFIG: SchoolConfig = {
   schoolName: 'Okul',
+  principalName: 'Nurten HOYRAZLI',
   dailyLessons: 7,
   grades: [
     { grade: '5', sections: ['A', 'B'] },

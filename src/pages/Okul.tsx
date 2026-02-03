@@ -8,12 +8,14 @@ type GradeConfig = {
 
 type SchoolConfig = {
   schoolName?: string
+  principalName?: string
   dailyLessons: number
   grades: GradeConfig[]
 }
 
 const DEFAULT_CONFIG: SchoolConfig = {
   schoolName: 'Okul',
+  principalName: 'Nurten HOYRAZLI',
   dailyLessons: 7,
   grades: [
     { grade: '5', sections: ['A', 'B'] },
@@ -37,6 +39,10 @@ export default function Okul() {
 
   const updateSchoolName = (name: string) => {
     setConfig((c) => ({ ...c, schoolName: name }))
+  }
+
+  const updatePrincipalName = (name: string) => {
+    setConfig((c) => ({ ...c, principalName: name }))
   }
 
   const addNextGrade = () => {
@@ -82,6 +88,17 @@ export default function Okul() {
           value={config.schoolName ?? ''}
           onChange={(e) => updateSchoolName(e.target.value)}
           placeholder="Okul adını girin"
+          style={{ maxWidth: 360 }}
+        />
+      </section>
+
+      <section className="glass p-6" style={{ marginBottom: 16 }}>
+        <h3 className="section-title" style={{ marginTop: 0 }}>Okul Müdürü</h3>
+        <input
+          className="input"
+          value={config.principalName ?? ''}
+          onChange={(e) => updatePrincipalName(e.target.value)}
+          placeholder="Okul müdürü adı"
           style={{ maxWidth: 360 }}
         />
       </section>

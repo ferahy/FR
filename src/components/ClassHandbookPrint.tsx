@@ -7,7 +7,7 @@ type Props = {
   subjects: Subject[]
   teachers: Teacher[]
   classes: Array<{ key: string; grade: string; section: string }>
-  school: { schoolName?: string; dailyLessons?: number; lessonDuration?: number; breakDuration?: number }
+  school: { schoolName?: string; principalName?: string; dailyLessons?: number; lessonDuration?: number; breakDuration?: number }
   slots: string[]
 }
 
@@ -58,10 +58,10 @@ export default function ClassHandbookPrint({ tables, subjects, teachers, classes
                 <p>2025 - 2026 Öğretim Yılında {effectiveDate} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
                 <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
               </div>
-              <div className="print-signature">
-                <div>Nurten HOYRAZLI</div>
-                <div>Müdür</div>
-              </div>
+            <div className="print-signature">
+              <div>{school.principalName || 'Nurten HOYRAZLI'}</div>
+              <div>Müdür</div>
+            </div>
             </div>
 
             {/* Timetable */}
