@@ -312,3 +312,212 @@ body{
 .swatch:focus-visible{outline:2px solid #93c5fd99;outline-offset:2px}
 .swatch.selected{outline:2px solid #ffffffcc;border-color:#ffffffaa}
 .plain-title{font-size:18px;font-weight:800;color:#ffffff}
+
+/* ==================== PRINT STYLES FOR PDF EXPORTS ==================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm 10mm;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide all main content during print */
+  .topbar, .tabs, .timetable-sections, .grade-section,
+  .grid-timetables, .sheet-overlay, nav, button, .brand {
+    display: none !important;
+  }
+
+  /* Ensure print wrappers and containers are visible */
+  .print-wrapper {
+    display: block !important;
+    visibility: visible !important;
+    width: 100%;
+  }
+
+  [data-print-mode] {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .print-container {
+    display: block !important;
+    visibility: visible !important;
+    position: relative;
+    width: 100%;
+  }
+
+  .print-container *,
+  .print-wrapper *,
+  [data-print-mode] * {
+    visibility: visible !important;
+  }
+
+  .print-page {
+    display: block !important;
+  }
+
+  .print-page * {
+    display: revert !important;
+  }
+
+  /* Print page styles */
+  .print-page {
+    page-break-after: always;
+    background: white;
+    color: black;
+    padding: 0;
+    margin: 0;
+  }
+
+  .print-page:last-child {
+    page-break-after: auto;
+  }
+
+  /* Official header */
+  .print-header {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 11pt;
+    line-height: 1.4;
+  }
+
+  .print-header-line {
+    margin: 2px 0;
+    font-weight: bold;
+  }
+
+  .print-date {
+    text-align: right;
+    font-size: 10pt;
+    margin-bottom: 15px;
+  }
+
+  /* Class info section */
+  .print-class-info {
+    margin-bottom: 15px;
+    font-size: 10pt;
+  }
+
+  .print-class-info div {
+    margin: 3px 0;
+  }
+
+  /* Official message */
+  .print-message {
+    font-size: 9pt;
+    line-height: 1.5;
+    margin: 15px 0;
+    max-width: 100%;
+  }
+
+  .print-message p {
+    margin: 4px 0;
+    text-align: justify;
+  }
+
+  .print-signature {
+    text-align: right;
+    margin-top: 40px;
+    font-size: 10pt;
+  }
+
+  /* Timetable */
+  .print-timetable {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+    font-size: 9pt;
+  }
+
+  .print-timetable th,
+  .print-timetable td {
+    border: 1px solid #000;
+    padding: 4px 6px;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .print-timetable th {
+    background: #f0f0f0;
+    font-weight: bold;
+  }
+
+  .print-timetable .day-col {
+    font-weight: bold;
+    background: #f8f8f8;
+  }
+
+  .print-timetable .slot-cell {
+    min-height: 30px;
+  }
+
+  .print-subject {
+    font-weight: bold;
+    display: block;
+  }
+
+  .print-teacher {
+    font-size: 8pt;
+    display: block;
+  }
+
+  /* Subject list table */
+  .print-subject-list {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    font-size: 9pt;
+  }
+
+  .print-subject-list th,
+  .print-subject-list td {
+    border: 1px solid #000;
+    padding: 4px 8px;
+    text-align: left;
+  }
+
+  .print-subject-list th {
+    background: #f0f0f0;
+    font-weight: bold;
+  }
+
+  /* Landscape for Çarşaf */
+  @page :left {
+    size: A4 landscape;
+  }
+
+  .print-landscape {
+    width: 100%;
+    max-width: none;
+  }
+
+  .print-landscape .print-timetable {
+    font-size: 7pt;
+  }
+
+  .print-landscape .print-timetable th,
+  .print-landscape .print-timetable td {
+    padding: 2px 3px;
+  }
+
+  /* No page breaks in tables */
+  .print-timetable, .print-subject-list {
+    page-break-inside: avoid;
+  }
+}
+
+/* Landscape class for çarşaf view */
+@page landscape-page {
+  size: A4 landscape;
+  margin: 10mm 8mm;
+}
+
+.print-landscape-page {
+  page: landscape-page;
+}
