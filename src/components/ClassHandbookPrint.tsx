@@ -14,6 +14,8 @@ type Props = {
 const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
 
 export default function ClassHandbookPrint({ tables, subjects, teachers, classes, school, slots }: Props) {
+  const effectiveDate = new Date().toLocaleDateString('tr-TR')
+
   return (
     <div className="print-container">
       {classes.map((classItem) => {
@@ -52,7 +54,7 @@ export default function ClassHandbookPrint({ tables, subjects, teachers, classes
 
             {/* Official Message */}
             <div className="print-message">
-              <p>2025 - 2026 Öğretim Yılında 12.12.2025 tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
+              <p>2025 - 2026 Öğretim Yılında {effectiveDate} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
               <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
             </div>
 

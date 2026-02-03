@@ -422,9 +422,14 @@ body{
   }
 
   .print-signature {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
     text-align: right;
-    margin-top: 40px;
+    margin-top: 60px;
+    margin-left: auto;
     font-size: 10pt;
+    max-width: 240px;
   }
 
   /* Timetable */
