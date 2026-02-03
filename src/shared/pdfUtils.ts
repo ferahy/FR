@@ -102,10 +102,15 @@ export function getSubjectAbbreviation(subjectName: string): string {
 
 // Öğretmen kısaltması (örn: "MUSTAFA GÜLMEZ" -> "M.G.")
 export function getTeacherAbbreviation(teacherName: string): string {
-  const parts = teacherName.trim().toUpperCase().split(' ').filter(Boolean)
+  const parts = teacherName
+    .trim()
+    .split(/\s+/)
+    .map((p) => p.toLocaleUpperCase('tr-TR'))
+    .filter(Boolean)
+
   if (parts.length === 0) return ''
   if (parts.length === 1) return parts[0].slice(0, 3)
-  return parts.map(p => p[0]).join('.')
+  return parts.map(p => p[0]).join('.') + '.'
 }
 
 // Saat dilimlerini formatla
