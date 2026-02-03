@@ -1,4 +1,5 @@
 import type { Subject, Teacher, Day } from './types'
+import type { TeacherSchedule } from './pdfUtils'
 
 type ClassSchedule = Record<Day, Array<{ subjectId?: string; teacherId?: string }>>
 
@@ -339,6 +340,145 @@ export function generateClassHandbookHTML(
         <div class="col1">${item.name}</div>
         <div class="col2">${item.hours}</div>
         <div class="col3">${item.teacherName}</div>
+        <div class="col4"></div>
+      </div>
+      `).join('')}
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+export function generateTeacherHandbookHTML(
+  teacher: Teacher,
+  schedule: TeacherSchedule,
+  subjects: Subject[],
+  schoolName: string,
+  principalNameFromSchool?: string,
+  slotTimes?: string[]
+): string {
+  const subjectCounts = new Map<string, number>()
+  DAYS.forEach(day => {
+    schedule[day]?.forEach(cell => {
+      if (cell.subjectId) {
+        subjectCounts.set(cell.subjectId, (subjectCounts.get(cell.subjectId) || 0) + 1)
+      }
+    })
+  })
+
+  const subjectList = Array.from(subjectCounts.entries())
+    .map(([id, hours]) => {
+      const subj = subjects.find(s => s.id === id)
+      return { name: subj?.name || '', hours }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+
+  const today = new Date().toLocaleDateString('tr-TR')
+  const principalName = principalNameFromSchool && principalNameFromSchool.trim() ? principalNameFromSchool : 'Nurten HOYRAZLI'
+  const times = slotTimes && slotTimes.length ? slotTimes : LESSON_TIMES
+
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>${teacher.name} Ders Programı</title>
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; background: white; }
+
+    .page { width: 210mm; min-height: 297mm; padding: 12mm; box-sizing: border-box; }
+
+    .header { height: 20mm; text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.3; }
+    .header div { margin: 1mm 0; }
+    .header-date { text-align: right; font-weight: normal; font-size: 10pt; }
+
+    .teacher-info { margin: 4mm 0 8mm 0; font-size: 10pt; }
+    .teacher-info div { margin: 1mm 0; }
+
+    .message-block { min-height: 28mm; display: flex; justify-content: space-between; align-items: stretch; margin-bottom: 6mm; }
+    .message { width: 135mm; font-size: 10.5pt; line-height: 1.2; text-align: justify; }
+    .message p { margin: 1mm 0; white-space: nowrap; letter-spacing: 0.1px; }
+    .signature { width: 35mm; text-align: right; font-weight: bold; font-size: 10.5pt; line-height: 1.3; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-end; }
+
+    .main-table { width: 170mm; border-collapse: collapse; margin: 0 auto 8mm auto; }
+    .main-table th, .main-table td { border: 0.3mm solid #000; text-align: center; vertical-align: middle; }
+    .main-table thead th { padding: 2mm 0; }
+    .main-table .day-col { width: 28mm; font-weight: bold; font-size: 10pt; }
+    .main-table .lesson-col { width: 20mm; height: 10mm; }
+    .cell-subject { font-weight: bold; font-size: 10pt; line-height: 1.1; }
+    .cell-class { font-size: 9pt; line-height: 1.1; margin-top: 0.5mm; }
+
+    .summary { width: auto; max-width: 170mm; margin: 0 auto; font-size: 10pt; display: flex; flex-direction: column; gap: 1mm; }
+    .summary-header, .summary-row { display: grid; grid-template-columns: max-content 12mm 55mm 10mm; column-gap: 1.5mm; align-items: center; padding: 0 1mm; line-height: 1.2; }
+    .summary-header { font-weight: bold; margin-bottom: 1mm; }
+    .summary-header .col2, .summary-row .col2, .summary-header .col4, .summary-row .col4 { text-align: center; }
+    .summary-row .col3 { text-transform: uppercase; }
+
+    @media print { body { background: white; } .page { margin: 0; padding: 12mm; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="header-date">${today}</div>
+      <div>T.C.</div>
+      <div>FİNİKE KAYMAKAMLIĞI</div>
+      <div>${schoolName || 'Hasyurt Ortaokulu'}</div>
+    </div>
+
+    <div class="teacher-info">
+      <div><strong>Öğretmenin Adı</strong> : ${teacher.name.toUpperCase()}</div>
+      <div><strong>Konu</strong> : Haftalık Ders Programı</div>
+    </div>
+
+    <div class="message-block">
+      <div class="message">
+        <p>2025 - 2026 Öğretim Yılında ${today} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
+        <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
+      </div>
+      <div class="signature">
+        <div>${principalName}</div>
+        <div>Müdür</div>
+      </div>
+    </div>
+
+    <table class="main-table">
+      <thead>
+        <tr>
+          <th class="day-col"></th>
+          ${times.map((t, idx) => `<th class="lesson-col">${idx + 1}<br>${t}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${DAYS.map(day => `
+        <tr>
+          <td class="day-col">${day}</td>
+          ${times.map((_, idx) => {
+            const cell = schedule[day]?.[idx]
+            if (!cell?.subjectId) return '<td class="lesson-col">—</td>'
+            return `<td class="lesson-col">
+              <div class="cell-subject">${getSubjectAbbr(cell.subjectName || '')}</div>
+              <div class="cell-class">${cell.className || ''}</div>
+            </td>`
+          }).join('')}
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <div class="summary">
+      <div class="summary-header">
+        <div class="col1">Dersin Adı</div>
+        <div class="col2">HDS</div>
+        <div class="col3">Öğretmenin Adı</div>
+        <div class="col4">Derslik</div>
+      </div>
+      ${subjectList.map(item => `
+      <div class="summary-row">
+        <div class="col1">${item.name}</div>
+        <div class="col2">${item.hours}</div>
+        <div class="col3">${teacher.name}</div>
         <div class="col4"></div>
       </div>
       `).join('')}
