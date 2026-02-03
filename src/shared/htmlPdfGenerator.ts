@@ -45,12 +45,13 @@ export function generateClassHandbookHTML(
   schedule: ClassSchedule,
   subjects: Subject[],
   teachers: Teacher[],
-  schoolName: string,
+  schoolNameFromProps: string,
   principalNameFromSchool?: string
 ): string {
   const [grade, section] = classKey.split('-')
   const today = new Date().toLocaleDateString('tr-TR')
   const principalName = principalNameFromSchool && principalNameFromSchool.trim() ? principalNameFromSchool : 'Nurten HOYRAZLI'
+  const schoolNameSafe = schoolNameFromProps && schoolNameFromProps.trim() ? schoolNameFromProps : 'Hasyurt Ortaokulu'
 
   // Calculate subject counts
   const subjectCounts = new Map<string, { name: string; hours: number; teacherName: string }>()
@@ -273,7 +274,7 @@ export function generateClassHandbookHTML(
       <div class="header-date">${today}</div>
       <div>T.C.</div>
       <div>FİNİKE KAYMAKAMLIĞI</div>
-      <div>${schoolName || 'Hasyurt Ortaokulu'}</div>
+      <div>${schoolNameSafe}</div>
     </div>
 
     <!-- SINIF BİLGİ -->
@@ -353,12 +354,13 @@ export function generateTeacherHandbookHTML(
   teacher: Teacher,
   schedule: TeacherSchedule,
   _subjects: Subject[],
-  schoolName: string,
+  schoolNameFromProps: string,
   principalNameFromSchool?: string,
   slotTimes?: string[]
 ): string {
   const today = new Date().toLocaleDateString('tr-TR')
   const principalName = principalNameFromSchool && principalNameFromSchool.trim() ? principalNameFromSchool : 'Nurten HOYRAZLI'
+  const schoolNameSafe = schoolNameFromProps && schoolNameFromProps.trim() ? schoolNameFromProps : 'Hasyurt Ortaokulu'
   const times = slotTimes && slotTimes.length ? slotTimes : LESSON_TIMES
   let totalHours = 0
   DAYS.forEach(day => {
@@ -424,7 +426,7 @@ export function generateTeacherHandbookHTML(
       <div class="header-date">${today}</div>
       <div>T.C.</div>
       <div>FİNİKE KAYMAKAMLIĞI</div>
-      <div>${schoolName || 'Hasyurt Ortaokulu'}</div>
+      <div>${schoolNameSafe}</div>
     </div>
 
     <div class="teacher-info">
