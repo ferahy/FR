@@ -144,6 +144,23 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
   const [syncing, setSyncing] = useState<'idle' | 'up' | 'down'>('idle')
   const [message, setMessage] = useState<string | null>(null)
 
+  useEffect(() => {
+    // Otomatik ilk yükleme (sadece bu sekmede bir kez)
+    const loaded = sessionStorage.getItem('cloudLoadedOnce')
+    if (loaded === '1') return
+    ;(async () => {
+      setSyncing('down')
+      const res = await loadFromCloud()
+      setSyncing('idle')
+      if (res.ok) {
+        sessionStorage.setItem('cloudLoadedOnce', '1')
+        window.location.reload()
+      } else {
+        setMessage(`Hata: ${res.error}`)
+      }
+    })()
+  }, [])
+
   const doSave = async () => {
     setMessage(null)
     setSyncing('up')
