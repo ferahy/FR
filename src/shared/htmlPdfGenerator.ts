@@ -6,7 +6,7 @@ const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
 const LESSON_TIMES = ['08:40', '09:35', '10:35', '11:30', '13:10', '14:05', '15:00']
 
 function getSubjectAbbr(name: string): string {
-  const upper = name.toLocaleUpperCase('tr-TR')
+  const upper = name.toUpperCase()
   if (upper.includes('MATEMATİK')) return 'MAT'
   if (upper.includes('TÜRKÇE')) return 'TURKC'
   if (upper.includes('FEN')) return 'FEN B'
@@ -34,14 +34,9 @@ function getSubjectAbbr(name: string): string {
 }
 
 function getTeacherAbbr(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .map(p => p.toLocaleUpperCase('tr-TR'))
-    .filter(Boolean)
-  if (parts.length === 0) return ''
-  if (parts.length === 1) return parts[0].slice(0, 3)
-  return parts.map(p => p[0]).join('.') + '.'
+  const parts = name.trim().split(' ')
+  if (parts.length === 1) return parts[0].slice(0, 3).toUpperCase()
+  return parts.map(p => p[0].toUpperCase()).join('.')
 }
 
 export function generateClassHandbookHTML(
@@ -83,6 +78,9 @@ export function generateClassHandbookHTML(
 
   const subjectList = Array.from(subjectCounts.values())
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+
+  const maxNameLength = subjectList.reduce((max, item) => Math.max(max, item.name.length), 0)
+  const col1Width = Math.min(Math.max(maxNameLength * 2.0, 60), 110)
 
   return `<!DOCTYPE html>
 <html lang="tr">
@@ -140,7 +138,7 @@ export function generateClassHandbookHTML(
     }
 
     .message {
-      width: 140mm;
+      width: 135mm;
       font-size: 10.5pt;
       line-height: 1.2;
       text-align: justify;
@@ -153,7 +151,7 @@ export function generateClassHandbookHTML(
     }
 
     .signature {
-      width: 40mm;
+      width: 35mm;
       text-align: right;
       font-weight: bold;
       font-size: 10.5pt;
@@ -226,36 +224,40 @@ export function generateClassHandbookHTML(
 
     /* ALT LİSTE - 170mm */
     .summary {
-      width: 170mm;
+      width: auto;
+      max-width: 170mm;
       margin: 0 auto;
+      font-size: 10pt;
+      display: flex;
+      flex-direction: column;
+      gap: 1mm;
+    }
+
+    .summary-header,
+    .summary-row {
+      display: grid;
+      grid-template-columns: var(--col1-width, 90mm) 12mm 55mm 10mm;
+      column-gap: 1.5mm;
+      align-items: center;
+      padding: 0 1mm;
+      line-height: 1.2;
     }
 
     .summary-header {
       font-weight: bold;
-      font-size: 10.5pt;
-      margin-bottom: 2mm;
-      display: flex;
-      padding: 0 2mm;
+      margin-bottom: 1mm;
     }
 
-    .summary-header .col1 { width: 90mm; }
-    .summary-header .col2 { width: 12mm; text-align: center; }
-    .summary-header .col3 { width: 58mm; }
-    .summary-header .col4 { width: 10mm; }
-
-    .summary-row {
-      display: flex;
-      font-size: 10.5pt;
-      line-height: 5.5mm;
-      height: 5.5mm;
-      align-items: center;
-      padding: 0 2mm;
+    .summary-header .col2,
+    .summary-row .col2,
+    .summary-header .col4,
+    .summary-row .col4 {
+      text-align: center;
     }
 
-    .summary-row .col1 { width: 90mm; }
-    .summary-row .col2 { width: 12mm; text-align: center; }
-    .summary-row .col3 { width: 58mm; text-transform: uppercase; }
-    .summary-row .col4 { width: 10mm; }
+    .summary-row .col3 {
+      text-transform: uppercase;
+    }
 
     @media print {
       body { background: white; }
@@ -325,7 +327,7 @@ export function generateClassHandbookHTML(
     </table>
 
     <!-- ALT LİSTE -->
-    <div class="summary">
+    <div class="summary" style="--col1-width: ${col1Width}mm">
       <div class="summary-header">
         <div class="col1">Dersin Adı</div>
         <div class="col2">HDS</div>
