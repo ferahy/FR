@@ -5,6 +5,10 @@ import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
 import type { Day, Teacher } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
+import { generateClassHandbookHTML } from '../shared/htmlPdfGenerator'
+import ClassHandbookPrint from '../components/ClassHandbookPrint'
+import ClassSheetPrint from '../components/ClassSheetPrint'
+import { getSubjectAbbreviation, getTeacherAbbreviation } from '../shared/pdfUtils'
 
 const DAYS: Day[] = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma']
 
@@ -23,6 +27,54 @@ export default function DersProgramlari() {
   const [tables, setTables] = useLocalStorage<Record<ClassKey, Record<Day, Cell[]>>>('timetables', {})
   const [gradeFilter, setGradeFilter] = useState<string>('all')
   const [showSheet, setShowSheet] = useState(false)
+  const [printMode, setPrintMode] = useState<'handbook' | 'sheet' | null>(null)
+
+  const handlePrintHandbooks = () => {
+    // Generate HTML for all classes and open in new window
+    const allHTML = classes
+      .filter(c => tables[c.key]) // Only classes with schedules
+      .map(c => generateClassHandbookHTML(
+        c.key,
+        tables[c.key],
+        subjects,
+        teachers,
+        school.schoolName || 'Okul',
+        school.principalName
+      ))
+      .join('<div style="page-break-after: always;"></div>')
+
+    if (!allHTML) {
+      alert('Ders programı bulunamadı. Önce programları oluşturun.')
+      return
+    }
+
+    const newWindow = window.open('', '_blank')
+    if (!newWindow) {
+      alert('Pop-up engelleyici aktif. Lütfen bu site için pop-up\'lara izin verin.')
+      return
+    }
+
+    newWindow.document.write(allHTML)
+    newWindow.document.close()
+
+    // Wait for content to load then print
+    newWindow.onload = () => {
+      setTimeout(() => {
+        newWindow.print()
+      }, 500)
+    }
+  }
+
+  const handlePrintSheet = () => {
+    setPrintMode('sheet')
+    // Wait longer for React to render
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        window.print()
+        setTimeout(() => setPrintMode(null), 100)
+      }, 100)
+    })
+  }
 
   const generate = () => {
     const result: Record<ClassKey, Record<Day, Cell[]>> = {}
@@ -110,6 +162,8 @@ export default function DersProgramlari() {
         </label>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-outline" onClick={() => setShowSheet(true)} disabled={!Object.keys(tables ?? {}).length}>Çarşaf Görünüm</button>
+          <button className="btn btn-outline" onClick={handlePrintHandbooks} disabled={!Object.keys(tables ?? {}).length}>📄 Sınıf El PDF</button>
+          <button className="btn btn-outline" onClick={handlePrintSheet} disabled={!Object.keys(tables ?? {}).length}>📊 Sınıf Çarşaf PDF</button>
           <button className="btn btn-primary" onClick={generate}>Programları Oluştur</button>
         </div>
       </div>
@@ -147,8 +201,8 @@ export default function DersProgramlari() {
                                   {cell?.subjectId ? (
                                     <div className="slot-pill" title={`${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}`}>
                                       <span className="dot" style={{ background: subj?.color ?? '#93c5fd' }} />
-                                      <span className="s-name">{subj?.name}</span>
-                                      <span className="s-teacher">{teacher ? teacher.name : '—'}</span>
+                                      <span className="s-name">{getSubjectAbbreviation(subj?.name || '')}</span>
+                                      <span className="s-teacher">{teacher ? getTeacherAbbreviation(teacher.name) : '—'}</span>
                                     </div>
                                   ) : (
                                     <span className="muted">—</span>
@@ -242,8 +296,8 @@ export default function DersProgramlari() {
                             <td key={c.key + d + si} className="sheet-slot">
                               <div className="sheet-pill" title={`${subj?.name || ''} ${teacher?.name ? '— ' + teacher.name : ''}`}>
                                 <div className="sheet-text">
-                                  <div className="sheet-subj">{shortLabel(subj?.name)}</div>
-                                  {teacher?.name && <div className="sheet-teacher">{teacher.name}</div>}
+                                  <div className="sheet-subj">{getSubjectAbbreviation(subj?.name || '')}</div>
+                                  {teacher?.name && <div className="sheet-teacher">{getTeacherAbbreviation(teacher.name)}</div>}
                                 </div>
                               </div>
                             </td>
@@ -258,6 +312,40 @@ export default function DersProgramlari() {
           </div>
         </div>
       )}
+
+      {/* Print Components */}
+      <div
+        data-print-mode="handbook"
+        className="print-wrapper"
+        style={{ display: printMode === 'handbook' ? 'block' : 'none' }}
+      >
+        {printMode === 'handbook' && (
+          <ClassHandbookPrint
+            tables={tables}
+            subjects={subjects}
+            teachers={teachers}
+            classes={classes}
+            school={school}
+            slots={slots}
+          />
+        )}
+      </div>
+      <div
+        data-print-mode="sheet"
+        className="print-wrapper"
+        style={{ display: printMode === 'sheet' ? 'block' : 'none' }}
+      >
+        {printMode === 'sheet' && (
+          <ClassSheetPrint
+            tables={tables}
+            subjects={subjects}
+            teachers={teachers}
+            classes={classes}
+            school={school}
+            slots={slots}
+          />
+        )}
+      </div>
     </>
   )
 }
@@ -317,10 +405,4 @@ function getTeacherSubjectIds(t: Teacher): string[] {
   if (t.subjectIds && t.subjectIds.length) return t.subjectIds
   if (t.subjectId) return [t.subjectId]
   return []
-}
-
-function shortLabel(name?: string) {
-  if (!name) return ''
-  const clean = name.trim().toUpperCase()
-  return clean.length > 8 ? clean.slice(0, 8) : clean
 }
