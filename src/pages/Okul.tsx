@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { useLocalStorage } from '../shared/useLocalStorage'
 import { DEFAULT_GRADES } from '../shared/useSchool'
 
@@ -36,11 +36,6 @@ export default function Okul() {
       setConfig((c) => ({ ...c, schoolName: 'Hasyurt Ortaokulu' }))
     }
   }, [config.schoolName, setConfig])
-
-  const totalSections = useMemo(
-    () => config.grades.reduce((acc, g) => acc + g.sections.length, 0),
-    [config.grades]
-  )
 
   const updateDailyLessons = (val: number) => {
     setConfig((c) => ({ ...c, dailyLessons: Math.max(1, Math.min(12, val)) }))
@@ -148,7 +143,6 @@ export default function Okul() {
       <section className="glass p-6">
         <div className="section-head" style={{ alignItems: 'flex-start', gap: 8 }}>
           <h3 className="section-title" style={{ marginTop: 0, marginBottom: 4 }}>Sınıflar ve Şubeler</h3>
-          <div className="muted" style={{ marginTop: 4 }}>Toplam Şube: {totalSections}</div>
         </div>
 
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
