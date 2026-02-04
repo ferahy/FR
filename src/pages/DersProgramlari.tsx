@@ -575,9 +575,26 @@ function normalizeName(name: string): string {
     .replace(/[^a-z0-9]/g, '')
 }
 
+const SUBJECT_ALIASES: Record<string, string> = {
+  fenbilimleri: 'fen',
+  fen: 'fen',
+  ingilizce: 'ingilizce',
+  yabancidilingilizce: 'ingilizce',
+  din: 'dinkulturu',
+  dinkulturu: 'dinkulturu',
+  beden: 'bedenegitimi',
+  bedeneğitimi: 'bedenegitimi',
+  bedenegitimi: 'bedenegitimi',
+}
+
 function findSubjectIdByName(subjects: ReturnType<typeof useSubjects>['subjects'], targetName: string): string | undefined {
-  const target = normalizeName(targetName)
-  const match = subjects.find(s => normalizeName(s.name) === target)
+  const raw = normalizeName(targetName)
+  const target = SUBJECT_ALIASES[raw] ?? raw
+  const match = subjects.find(s => {
+    const norm = normalizeName(s.name)
+    const normCanon = SUBJECT_ALIASES[norm] ?? norm
+    return normCanon === target
+  })
   return match?.id
 }
 
