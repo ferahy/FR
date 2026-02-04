@@ -6,6 +6,7 @@ import { useTeachers } from '../shared/useTeachers'
 import type { Day, Teacher } from '../shared/types'
 import { useSchool } from '../shared/useSchool'
 import { useGrades } from '../shared/useGrades'
+import { saveToCloud } from '../shared/cloudSync'
 
 const DAYS: Day[] = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma']
 
@@ -196,6 +197,7 @@ export default function Ogretmenler() {
           if (availEditing) {
             const { id, ...rest } = availEditing
             update(id, { ...rest, unavailable })
+            saveToCloud()
             pushToast({ kind: 'success', text: 'Uygunluk güncellendi' })
           }
           setAvailEditing(null)
