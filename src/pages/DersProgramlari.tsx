@@ -51,6 +51,25 @@ const REQUIRED_HOURS: Record<string, Record<string, number>> = {
     'Rehberlik': 1,
     'Seçmeli': 5,
   },
+  '7': {
+    'Türkçe': 5,
+    'Matematik': 5,
+    'Fen Bilimleri': 4,
+    'Fen': 4,
+    'Sosyal Bilgiler': 3,
+    'Sosyal': 3,
+    'İngilizce': 4,
+    'Yabancı Dil (İngilizce)': 4,
+    'Din': 2,
+    'Din Kültürü': 2,
+    'Görsel Sanatlar': 1,
+    'Müzik': 1,
+    'Beden': 2,
+    'Beden Eğitimi': 2,
+    'Teknoloji ve Tasarım': 2,
+    'Rehberlik': 1,
+    'Seçmeli': 5,
+  },
 }
 
 export default function DersProgramlari() {
