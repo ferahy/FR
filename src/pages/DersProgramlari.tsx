@@ -217,10 +217,7 @@ export default function DersProgramlari() {
       // PHASE 2: Place regular (non-block) subjects
       const pool: string[] = []
       for (const [subjId, count] of Object.entries(subjectDemand)) {
-        const subject = subjects.find(s => s.id === subjId)
-        if (subject?.rule?.preferBlockScheduling) continue // Skip block subjects
         if (count <= 0) continue
-
         for (let i = 0; i < count; i++) {
           pool.push(subjId)
         }
@@ -237,13 +234,68 @@ export default function DersProgramlari() {
 
           let pickedIndex = -1
           let pickedTeacher: string | undefined
-
           for (let i = 0; i < pool.length; i++) {
             const subjId = pool[i]
             if (!subjId) continue
 
             const subject = subjects.find(s => s.id === subjId)
             const rule = subject?.rule
+
+            const remainingSame = pool.filter(p => p === subjId).length
+
+            // Block placement attempt if preferred and two slots remain on the same day
+            if (rule?.preferBlockScheduling && remainingSame >= 2 && si < slots.length - 1) {
+              if (table[day][si]?.subjectId || table[day][si + 1]?.subjectId) continue
+              const slotAvoid1 = rule.avoidSlots?.includes(`S${si + 1}`)
+              const slotAvoid2 = rule.avoidSlots?.includes(`S${si + 2}`)
+              if (slotAvoid1 || slotAvoid2) continue
+              const perDayMax = rule.perDayMax ?? 0
+              if (perDayMax > 0 && (perDayCount[subjId] ?? 0) + 2 > perDayMax) continue
+
+              // Find a teacher available for both slots (prefer the already assigned one)
+              let teacherId: string | undefined
+              const existingTeacher = classSubjectTeacher[subjId]
+
+              const canUseTeacher = (tId: string) => {
+                const ok1 = !!pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, requiredTeacherId: tId, occupied: teacherOccupied })
+                const ok2 = !!pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, { commit: false, requiredTeacherId: tId, occupied: teacherOccupied })
+                return ok1 && ok2
+              }
+
+              if (existingTeacher && canUseTeacher(existingTeacher)) {
+                teacherId = existingTeacher
+              } else {
+                const candidate = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, occupied: teacherOccupied })
+                if (candidate && canUseTeacher(candidate)) {
+                  teacherId = candidate
+                  classSubjectTeacher[subjId] = candidate
+                }
+              }
+
+              if (teacherId) {
+                // Place block
+                table[day][si] = { subjectId: subjId, teacherId }
+                table[day][si + 1] = { subjectId: subjId, teacherId }
+                perDayCount[subjId] = (perDayCount[subjId] ?? 0) + 2
+                teacherLoad.set(teacherId, (teacherLoad.get(teacherId) ?? 0) + 2)
+                if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
+                teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
+                teacherOccupied.get(teacherId)!.add(`${day}-${si + 1}`)
+                if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
+                placedDays[subjId].add(day)
+
+                // remove two occurrences from pool
+                pool.splice(i, 1)
+                const secondIdx = pool.indexOf(subjId)
+                if (secondIdx !== -1) pool.splice(secondIdx, 1)
+
+                pickedIndex = -1 // already placed
+                si++ // skip next slot
+                break
+              } else {
+                continue
+              }
+            }
 
             // Check avoid slots
             if (rule?.avoidSlots?.includes(`S${si + 1}`)) continue
