@@ -50,10 +50,13 @@ export default function Okul() {
   }
 
   const addNextGrade = () => {
+    const input = window.prompt('Eklemek istediğiniz sınıfı yazın (ör: 5, 6, 7, 8):')
+    if (!input) return
+    const grade = input.trim()
+    if (!grade) return
     setConfig((c) => {
-      const ng = nextGrade(c.grades)
-      if (c.grades.some((g) => g.grade === ng)) return c
-      return { ...c, grades: [...c.grades, { grade: ng, sections: ['A'] }] }
+      if (c.grades.some((g) => g.grade === grade)) return c
+      return { ...c, grades: [...c.grades, { grade, sections: ['A'] }] }
     })
   }
 
@@ -141,22 +144,13 @@ export default function Okul() {
       </section>
 
       <section className="glass p-6">
-        <div className="section-head" style={{ alignItems: 'flex-start', gap: 8 }}>
+        <div className="section-head" style={{ alignItems: 'center', gap: 8 }}>
           <h3 className="section-title" style={{ marginTop: 0, marginBottom: 4 }}>Sınıflar ve Şubeler</h3>
-        </div>
-
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <button className="btn btn-primary" onClick={addNextGrade}>
-            Sınıf Ekle
-          </button>
-          <button className="btn btn-outline" onClick={resetGrades}>
-            Varsayılan Şubeleri Getir
-          </button>
-          {config.grades.length > 0 && (
-            <button className="btn btn-outline btn-danger" onClick={() => setConfig((c) => ({ ...c, grades: [] }))}>
-              Hepsini Sil
+          <div style={{ marginLeft: 'auto' }}>
+            <button className="btn btn-outline" onClick={resetGrades}>
+              Varsayılan Şubeleri Getir
             </button>
-          )}
+          </div>
         </div>
 
         <div className="grade-list">
@@ -189,6 +183,12 @@ export default function Okul() {
             </div>
           ))}
         </div>
+
+        <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+          <button className="btn btn-primary" onClick={addNextGrade}>
+            Sınıf Ekle
+          </button>
+        </div>
       </section>
     </>
   )
@@ -206,11 +206,4 @@ function nextSectionLetter(existing: string[]): string {
   return `A${i}`
 }
 
-function nextGrade(grades: GradeConfig[]): string {
-  const nums = grades
-    .map((g) => (/^\d+$/.test(g.grade) ? parseInt(g.grade, 10) : NaN))
-    .filter((n) => !Number.isNaN(n)) as number[]
-  if (nums.length === 0) return '5'
-  const max = Math.max(...nums)
-  return String(max + 1)
-}
+// nextGrade artık kullanılmıyor (manuel giriş var)
