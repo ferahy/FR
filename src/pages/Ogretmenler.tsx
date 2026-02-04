@@ -193,12 +193,12 @@ export default function Ogretmenler() {
         onClose={()=> setAvailEditing(null)}
         teacher={availEditing ?? undefined}
         slots={slots}
-        onSave={(unavailable)=> {
+        onSave={async (unavailable)=> {
           if (availEditing) {
             const { id, ...rest } = availEditing
             update(id, { ...rest, unavailable })
-            saveToCloud()
-            pushToast({ kind: 'success', text: 'Uygunluk güncellendi' })
+            const res = await saveToCloud()
+            pushToast({ kind: res.ok ? 'success' : 'error', text: res.ok ? 'Uygunluk güncellendi' : `Buluta kaydedilemedi: ${res.error}` })
           }
           setAvailEditing(null)
         }}
