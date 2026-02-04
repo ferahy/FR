@@ -145,12 +145,12 @@ export default function Okul() {
 
       <section className="glass p-6">
         <div className="section-head" style={{ alignItems: 'center', gap: 8 }}>
-          <h3 className="section-title" style={{ marginTop: 0, marginBottom: 4 }}>Sınıflar ve Şubeler</h3>
           <div style={{ marginLeft: 'auto' }}>
             <button className="btn btn-outline" onClick={resetGrades}>
               Varsayılan Şubeleri Getir
             </button>
           </div>
+          <h3 className="section-title" style={{ marginTop: 0, marginBottom: 4 }}>Sınıflar ve Şubeler</h3>
         </div>
 
         <div className="grade-list">
