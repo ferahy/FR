@@ -8,6 +8,7 @@ import TopNav from './layout/TopNav'
 import { useEffect, useState } from 'react'
 import { useHashRoute } from './shared/useHashRoute'
 import { saveToCloud, loadFromCloud } from './shared/cloudSync'
+import KantePopup from './components/KantePopup'
 
 export default function App() {
   const { page, navigate } = useHashRoute('okul')
@@ -34,22 +35,7 @@ export default function App() {
     }
   }, [authed])
 
-  const [showKante, setShowKante] = useState(() => {
-    try {
-      return localStorage.getItem('kante_popup_hidden') !== '1'
-    } catch {
-      return true
-    }
-  })
-
-  const hideKante = () => {
-    setShowKante(false)
-    try {
-      localStorage.setItem('kante_popup_hidden', '1')
-    } catch {
-      // ignore
-    }
-  }
+  const [showKante, setShowKante] = useState(true)
 
   if (!authed) {
     return <LoginScreen onSuccess={() => setAuthed(true)} />
@@ -60,7 +46,7 @@ export default function App() {
       <AuthBar onLogout={() => setAuthed(false)} />
       <TopNav current={page} onNavigate={navigate} />
 
-      {showKante && <KantePopup onClose={hideKante} />}
+      {showKante && <KantePopup onClose={() => setShowKante(false)} />}
 
       {page === 'okul' && <Okul />}
       {page === 'dersler' && <Dersler />}
@@ -75,40 +61,6 @@ export default function App() {
           </div>
         </div>
       </footer>
-    </div>
-  )
-}
-
-function KantePopup({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      className="glass"
-      style={{
-        position: 'sticky',
-        top: 12,
-        zIndex: 50,
-        marginBottom: 12,
-        padding: 16,
-        border: '1px solid rgba(255,255,255,0.14)',
-        background: 'linear-gradient(135deg, #0b1f3a, #0c2d5c)',
-        color: '#e2e8f0',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
-        borderRadius: 14,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ width: 52, height: 52, borderRadius: 12, background: '#12274d', display: 'grid', placeItems: 'center', fontWeight: 800, color: '#facc15' }}>
-          ⚽️
-        </div>
-        <div style={{ flex: '1 1 220px' }}>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Hoş geldin Kante! 💛💙</div>
-          <div style={{ fontSize: 14, lineHeight: 1.4, color: '#cbd5e1' }}>
-            Fenerbahçe orta sahası “gel, çekirdek gibi yeriz” dedi; Kante de “ben geldim” dedi. 
-            Tribün hazır, Alex’in önünde 6 numara Kante. Şampiyonluk yoluna 5 tank yakıt yüklendi!
-          </div>
-        </div>
-        <button className="btn btn-outline btn-sm" onClick={onClose}>Kapat</button>
-      </div>
     </div>
   )
 }
