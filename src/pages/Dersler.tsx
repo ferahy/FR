@@ -3,6 +3,7 @@ import Modal from '../components/Modal'
 import Toasts, { pushToast } from '../components/Toast'
 import { useGrades } from '../shared/useGrades'
 import { useSubjects } from '../shared/useSubjects'
+import { useTeachers } from '../shared/useTeachers'
 import type { Subject } from '../shared/types'
 import { useSchool } from '../shared/useSchool'
 
@@ -25,6 +26,7 @@ type FormState = {
 export default function Dersler() {
   const grades = useGrades()
   const { subjects, add, update, remove, resetToDefaults } = useSubjects()
+  const { setTeachers } = useTeachers()
   const { dailyLessons } = useSchool()
 
   const [query, setQuery] = useState('')
@@ -51,6 +53,17 @@ export default function Dersler() {
   const openEdit = (s: Subject) => {
     setEditing(s)
     setShowModal(true)
+  }
+
+  const handleResetDefaults = () => {
+    resetToDefaults()
+    // Öğretmen branşlarını temizle ki eski subject ID'leri görünmesin
+    setTeachers((prev) => prev.map(t => ({
+      ...t,
+      subjectId: undefined,
+      subjectIds: [],
+    })))
+    pushToast({ kind: 'success', text: 'Varsayılan dersler yüklendi. Öğretmen branşları temizlendi.' })
   }
 
   const onSave = (data: FormState) => {
@@ -111,7 +124,7 @@ export default function Dersler() {
               <option key={g.id} value={g.id}>{g.label}</option>
             ))}
           </select>
-          <button className="btn btn-outline" onClick={resetToDefaults}>Varsayılan Dersleri Yükle</button>
+          <button className="btn btn-outline" onClick={handleResetDefaults}>Varsayılan Dersleri Yükle</button>
         </div>
       </div>
 
