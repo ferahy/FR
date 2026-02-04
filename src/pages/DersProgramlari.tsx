@@ -114,10 +114,29 @@ export default function DersProgramlari() {
           // pick next subject that still has remaining and respects perDayMax, consecutive limits and has an available teacher
           let pickedIndex = -1
           let pickedTeacher: string | undefined
+          let pickedBlockSize = 1
           for (let i = 0; i < pool.length; i++) {
             const subjId = pool[i]
             if (!subjId) continue
-            const rule = subjects.find(s => s.id === subjId)?.rule
+            const subj = subjects.find(s => s.id === subjId)
+            const rule = subj?.rule
+            const isPESubject = subj?.name?.toLowerCase().includes('beden') && (subj?.weeklyHoursByGrade[gradeId] ?? 0) === 2
+
+            if (isPESubject) {
+              if (si >= slots.length - 1) continue // 2'li blok için yer yok
+              if (table[day][si]?.subjectId || table[day][si + 1]?.subjectId) continue
+              const remainingSame = pool.filter(p => p === subjId).length
+              if (remainingSame < 2) continue
+              const perDayMax = Math.max(rule?.perDayMax ?? 0, 2)
+              if (perDayMax > 0 && (perDayCount[subjId] ?? 0) + 2 > perDayMax) continue
+              const teacherId = pickTeacherForSlots(teachers, teacherLoad, subjId, gradeId, day, [si, si + 1], { commit: false })
+              if (!teacherId) continue
+              pickedIndex = i
+              pickedTeacher = teacherId
+              pickedBlockSize = 2
+              break
+            }
+
             const perDayMax = rule?.perDayMax ?? 0
             if (perDayMax > 0 && (perDayCount[subjId] ?? 0) >= perDayMax) continue
             // avoid long consecutive
@@ -146,12 +165,26 @@ export default function DersProgramlari() {
           }
           if (pickedIndex === -1 || !pickedTeacher) continue
           const subjId = pool.splice(pickedIndex, 1)[0]
+          const subj = subjects.find(s => s.id === subjId)
+          const isPESubject = subj?.name?.toLowerCase().includes('beden') && (subj?.weeklyHoursByGrade[gradeId] ?? 0) === 2
 
-          table[day][si] = { subjectId: subjId, teacherId: pickedTeacher }
-          perDayCount[subjId] = (perDayCount[subjId] ?? 0) + 1
-          teacherLoad.set(pickedTeacher, (teacherLoad.get(pickedTeacher) ?? 0) + 1)
-          if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
-          placedDays[subjId].add(day)
+          if (isPESubject && pickedBlockSize === 2) {
+            const secondIdx = pool.indexOf(subjId)
+            if (secondIdx !== -1) pool.splice(secondIdx, 1)
+            table[day][si] = { subjectId: subjId, teacherId: pickedTeacher }
+            table[day][si + 1] = { subjectId: subjId, teacherId: pickedTeacher }
+            perDayCount[subjId] = (perDayCount[subjId] ?? 0) + 2
+            teacherLoad.set(pickedTeacher, (teacherLoad.get(pickedTeacher) ?? 0) + 2)
+            if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
+            placedDays[subjId].add(day)
+            si++ // bloğun ikinci saatini atla
+          } else {
+            table[day][si] = { subjectId: subjId, teacherId: pickedTeacher }
+            perDayCount[subjId] = (perDayCount[subjId] ?? 0) + 1
+            teacherLoad.set(pickedTeacher, (teacherLoad.get(pickedTeacher) ?? 0) + 1)
+            if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
+            placedDays[subjId].add(day)
+          }
         }
       }
       result[c.key] = table
@@ -372,6 +405,26 @@ function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: 
   const pick = choices[Math.floor(Math.random() * choices.length)]
   if (commit) {
     load.set(pick.id, (load.get(pick.id) ?? 0) + 1)
+  }
+  return pick.id
+}
+
+function pickTeacherForSlots(teachers: Teacher[], load: Map<string, number>, subjectId: string, gradeId: string, day: Day, slotIndices: number[], opts?: { commit?: boolean }): string | undefined {
+  const commit = opts?.commit ?? true
+  const choices = teachers.filter(t => {
+    const subs = getTeacherSubjectIds(t)
+    if (!subs.includes(subjectId)) return false
+    if (t.preferredGrades && t.preferredGrades.length > 0 && !t.preferredGrades.includes(gradeId)) return false
+    const unavailable = t.unavailable?.[day] ?? []
+    if (slotIndices.some(si => unavailable.includes(`S${si + 1}`))) return false
+    const cur = load.get(t.id) ?? 0
+    if (t.maxHours && cur + slotIndices.length > t.maxHours) return false
+    return true
+  })
+  if (!choices.length) return undefined
+  const pick = choices[Math.floor(Math.random() * choices.length)]
+  if (commit) {
+    load.set(pick.id, (load.get(pick.id) ?? 0) + slotIndices.length)
   }
   return pick.id
 }
