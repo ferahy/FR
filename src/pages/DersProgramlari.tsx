@@ -133,12 +133,12 @@ export default function DersProgramlari() {
             if (table[day][si]?.subjectId || table[day][si + 1]?.subjectId) continue
 
             // Check avoid slots
-            const slot1Avoided = subject.rule.avoidSlots?.includes(`S${si + 1}`)
-            const slot2Avoided = subject.rule.avoidSlots?.includes(`S${si + 2}`)
+            const slot1Avoided = subject.rule?.avoidSlots?.includes(`S${si + 1}`)
+            const slot2Avoided = subject.rule?.avoidSlots?.includes(`S${si + 2}`)
             if (slot1Avoided || slot2Avoided) continue
 
             // Check perDayMax
-            const perDayMax = subject.rule.perDayMax ?? 0
+            const perDayMax = subject.rule?.perDayMax ?? 0
             if (perDayMax > 0 && perDayCount + 2 > perDayMax) continue
 
             // Find teacher available for both slots (use assigned teacher if exists)
@@ -186,7 +186,7 @@ export default function DersProgramlari() {
             for (let si = 0; si < slots.length && !placed; si++) {
               if (table[day][si]?.subjectId) continue
 
-              const slotAvoided = subject.rule.avoidSlots?.includes(`S${si + 1}`)
+              const slotAvoided = subject.rule?.avoidSlots?.includes(`S${si + 1}`)
               if (slotAvoided) continue
 
               // Use assigned teacher if exists, otherwise pick and record
@@ -492,15 +492,6 @@ function buildClasses(school: ReturnType<typeof useSchool>): { key: ClassKey; gr
     for (const s of g.sections) out.push({ key: `${g.grade}-${s}`, grade: g.grade, section: s })
   }
   return out
-}
-
-function buildDemand(subjects: ReturnType<typeof useSubjects>['subjects'], gradeId: string): string[] {
-  const arr: string[] = []
-  for (const s of subjects) {
-    const n = s.weeklyHoursByGrade[gradeId] ?? 0
-    for (let i = 0; i < n; i++) arr.push(s.id)
-  }
-  return arr
 }
 
 function shouldBlockSubject(subject: ReturnType<typeof useSubjects>['subjects'][number], gradeId: string): boolean {
