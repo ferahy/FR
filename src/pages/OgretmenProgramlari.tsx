@@ -53,6 +53,7 @@ export default function OgretmenProgramlari() {
       return
     }
 
+    newWindow.document.title = `${school.schoolName || 'Öğretmen EL'}`
     newWindow.document.write(allHTML)
     newWindow.document.close()
 
@@ -84,6 +85,7 @@ export default function OgretmenProgramlari() {
       return
     }
 
+    newWindow.document.title = `${school.schoolName || 'Öğretmen Çarşaf'}`
     newWindow.document.write(html)
     newWindow.document.close()
 
