@@ -722,7 +722,7 @@ export function generateClassSheetHTML(
 export function generateTeacherSheetHTML(
   teacherSchedules: Record<string, TeacherSchedule>,
   teachers: Teacher[],
-  subjects: Subject[],
+  _subjects: Subject[],
   schoolNameFromProps: string,
   slots: string[]
 ): string {
