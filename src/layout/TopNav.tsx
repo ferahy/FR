@@ -10,7 +10,7 @@ export default function TopNav({ current, onNavigate }: Props) {
   return (
     <div className="topbar glass">
       <div className="brand">
-        <div className="title-lg grad-text brand-fr">FR</div>
+        <div className="title-lg grad-text brand-fr">RFT</div>
         <div className="subtitle">Ders Programı Oluştur</div>
       </div>
 
