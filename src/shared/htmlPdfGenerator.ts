@@ -413,7 +413,7 @@ export function generateTeacherHandbookHTML(
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <title>${teacher.name} Ders Programı</title>
+  <title>${schoolNameSafe} - Öğretmen EL</title>
   <style>
     @page { size: A4 portrait; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
