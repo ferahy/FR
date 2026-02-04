@@ -5,9 +5,7 @@ import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
 import type { Day, Teacher } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
-import { generateClassHandbookHTML } from '../shared/htmlPdfGenerator'
-import ClassHandbookPrint from '../components/ClassHandbookPrint'
-import ClassSheetPrint from '../components/ClassSheetPrint'
+import { generateClassHandbookHTML, generateClassSheetHTML } from '../shared/htmlPdfGenerator'
 import { getSubjectAbbreviation, getTeacherAbbreviation } from '../shared/pdfUtils'
 
 const DAYS: Day[] = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma']
@@ -27,7 +25,6 @@ export default function DersProgramlari() {
   const [tables, setTables] = useLocalStorage<Record<ClassKey, Record<Day, Cell[]>>>('timetables', {})
   const [gradeFilter, setGradeFilter] = useState<string>('all')
   const [showSheet, setShowSheet] = useState(false)
-  const [printMode, setPrintMode] = useState<'handbook' | 'sheet' | null>(null)
 
   const handlePrintHandbooks = () => {
     // Generate HTML for all classes and open in new window
@@ -66,14 +63,36 @@ export default function DersProgramlari() {
   }
 
   const handlePrintSheet = () => {
-    setPrintMode('sheet')
-    // Wait longer for React to render
-    requestAnimationFrame(() => {
+    // Generate HTML for all classes and open in new window
+    const html = generateClassSheetHTML(
+      tables,
+      subjects,
+      teachers,
+      classes,
+      school.schoolName || 'Hasyurt Ortaokulu',
+      slots
+    )
+
+    if (!html) {
+      alert('Ders programı bulunamadı. Önce programları oluşturun.')
+      return
+    }
+
+    const newWindow = window.open('', '_blank')
+    if (!newWindow) {
+      alert('Pop-up engelleyici aktif. Lütfen bu site için pop-up\'lara izin verin.')
+      return
+    }
+
+    newWindow.document.write(html)
+    newWindow.document.close()
+
+    // Wait for content to load then print
+    newWindow.onload = () => {
       setTimeout(() => {
-        window.print()
-        setTimeout(() => setPrintMode(null), 100)
-      }, 100)
-    })
+        newWindow.print()
+      }, 500)
+    }
   }
 
   const generate = () => {
@@ -152,7 +171,7 @@ export default function DersProgramlari() {
 
   return (
     <>
-      <div className="topbar glass p-6" style={{ justifyContent: 'space-between', gap: 12, marginBottom: 24 }}>
+      <div className="topbar glass p-6" style={{ justifyContent: 'space-between', gap: 12 }}>
         <label className="field" style={{ margin: 0 }}>
           <span className="field-label">Sınıf Filtresi</span>
           <select className="select" value={gradeFilter} onChange={(e)=> setGradeFilter(e.target.value)}>
@@ -313,39 +332,6 @@ export default function DersProgramlari() {
         </div>
       )}
 
-      {/* Print Components */}
-      <div
-        data-print-mode="handbook"
-        className="print-wrapper"
-        style={{ display: printMode === 'handbook' ? 'block' : 'none' }}
-      >
-        {printMode === 'handbook' && (
-          <ClassHandbookPrint
-            tables={tables}
-            subjects={subjects}
-            teachers={teachers}
-            classes={classes}
-            school={school}
-            slots={slots}
-          />
-        )}
-      </div>
-      <div
-        data-print-mode="sheet"
-        className="print-wrapper"
-        style={{ display: printMode === 'sheet' ? 'block' : 'none' }}
-      >
-        {printMode === 'sheet' && (
-          <ClassSheetPrint
-            tables={tables}
-            subjects={subjects}
-            teachers={teachers}
-            classes={classes}
-            school={school}
-            slots={slots}
-          />
-        )}
-      </div>
     </>
   )
 }

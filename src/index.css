@@ -203,7 +203,7 @@ body{
 /* Always stacked vertically; remove wider multi-columns */
 
 /* Grade sections */
-.timetable-sections{display:flex;flex-direction:column;gap:16px;margin-top:24px}
+.timetable-sections{display:flex;flex-direction:column;gap:16px;margin-top:12px}
 
 /* Mobile timetable cards */
 .tt-cards{display:none}
@@ -498,37 +498,42 @@ body{
     font-weight: bold;
   }
 
-  /* Landscape for Çarşaf */
-  @page :left {
-    size: A4 landscape;
-  }
-
-  .print-landscape {
-    width: 100%;
-    max-width: none;
-  }
-
-  .print-landscape .print-timetable {
-    font-size: 7pt;
-  }
-
-  .print-landscape .print-timetable th,
-  .print-landscape .print-timetable td {
-    padding: 2px 3px;
-  }
-
   /* No page breaks in tables */
   .print-timetable, .print-subject-list {
     page-break-inside: avoid;
   }
+
+  /* Landscape for Çarşaf - Override page settings */
+  .print-landscape-page {
+    page: landscape-page;
+  }
+
+  /* Specific landscape page overrides */
+  [data-print-mode="sheet"] .print-page {
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Ensure landscape table fits properly */
+  .print-landscape-page table {
+    font-size: 6pt !important;
+    width: 100%;
+  }
+
+  .print-landscape-page table th,
+  .print-landscape-page table td {
+    padding: 1px 2px !important;
+    border: 1px solid #000;
+  }
+
+  .print-landscape-page h1 {
+    font-size: 12pt !important;
+    margin: 0 0 8px 0 !important;
+  }
 }
 
-/* Landscape class for çarşaf view */
+/* Landscape page definition for çarşaf view */
 @page landscape-page {
   size: A4 landscape;
-  margin: 10mm 8mm;
-}
-
-.print-landscape-page {
-  page: landscape-page;
+  margin: 8mm 6mm;
 }

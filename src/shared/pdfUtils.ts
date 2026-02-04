@@ -74,29 +74,61 @@ export function getSubjectAbbreviation(subjectName: string): string {
   const upper = subjectName.trim().toLocaleUpperCase('tr-TR')
   if (!upper) return ''
 
-  const map: Array<{ match: RegExp; abbr: string }> = [
-    { match: /MATEMATİK/, abbr: 'MAT' },
-    { match: /TÜRKÇE/, abbr: 'TÜRKÇ' },
-    { match: /FEN\s*BİL/, abbr: 'FEN B' },
-    { match: /İNGİLİZCE/, abbr: 'İNG.' },
-    { match: /SOSYAL/, abbr: 'SOS' },
-    { match: /DİN\s*KÜLT/, abbr: 'DİN' },
-    { match: /BEDEN/, abbr: 'BED' },
-    { match: /MÜZİK/, abbr: 'MÜZ' },
-    { match: /GÖRSEL/, abbr: 'GÖR' },
-    { match: /BİLİŞİM/, abbr: 'BİL.T' },
-    { match: /TEKNOLOJ.*TASARIM/, abbr: 'TTAS' },
-    { match: /REHBERLİK/, abbr: 'REH' },
-    { match: /İNK(ILAP)?\s*TAR/, abbr: 'İNK' },
-    { match: /TEKNOLOJ/, abbr: 'TEKNO' },
-    // Seçmeli
-    { match: /^S\./, abbr: upper.slice(0, 5) },
-  ]
-
-  for (const { match, abbr } of map) {
-    if (match.test(upper)) return abbr
+  // Seçmeli dersler (önce kontrol et)
+  if (upper.startsWith('S.') || upper.startsWith('SEÇMELİ')) {
+    if (upper.includes('İNGİLİZCE')) return 'S.İNG'
+    if (upper.includes('MASAL')) return 'SMD'
+    if (upper.includes('PEYGAMBER')) return 'S.P.H'
+    if (upper.includes('KÜLTÜR')) return 'S.KMY'
+    if (upper.includes('KUR') && upper.includes('AN')) return 'S.KUR'
+    if (upper.includes('MATEMATİK')) return 'S.M.B'
+    if (upper.includes('AFET')) return 'S.A.B'
+    if (upper.includes('OYUN')) return 'S.O.E'
+    if (upper.includes('ÇEVRİ')) return 'S.ÇİD'
+    if (upper.includes('MEDYA')) return 'MED'
   }
 
+  // Özel eğitim dersleri
+  if (upper.startsWith('ÖE') || upper.includes('ÖZEL EĞİTİM')) {
+    if (upper.includes('DİN') || upper.includes('KÜLT')) return 'ÖEDK'
+    if (upper.includes('GÖRSEL')) return 'ÖEGS'
+    if (upper.includes('BEDEN')) return 'ÖEBDN'
+    if (upper.includes('MÜZ')) return 'ÖEM'
+    return 'ÖE'
+  }
+
+  // Normal dersler
+  if (upper.includes('MATEMATİK')) return 'MAT'
+  if (upper.includes('TÜRKÇE')) return 'TURKC'
+  if (upper.includes('FEN')) return 'FEN B'
+  if (upper.includes('İNGİLİZCE')) return 'İNG.'
+  if (upper.includes('SOSYAL')) {
+    // SOS7 veya SOS B olabilir
+    return upper.includes('7') ? 'SOS7' : 'SOS B'
+  }
+  if (upper.includes('DİN') || upper.includes('KÜLT')) return 'DİN'
+  if (upper.includes('BEDEN')) {
+    // BED, BEDN veya BDN olabilir
+    if (upper.includes('BEDN')) return 'BEDN'
+    if (upper.includes('BDN')) return 'BDN'
+    return 'BED'
+  }
+  if (upper.includes('MÜZİK')) return 'MÜZ'
+  if (upper.includes('GÖRSEL')) return 'GÖRSE'
+  if (upper.includes('BİLİŞİM')) {
+    return upper.includes('TEKNOLOJ') ? 'BTK' : 'BİL.T'
+  }
+  if (upper.includes('TEKNOLOJ')) {
+    if (upper.includes('TASARIM')) return 'TTAS'
+    if (upper.includes('TEKTA')) return 'TEKTA'
+    return 'TEKNO'
+  }
+  if (upper.includes('REHBERLİK')) return 'REH'
+  if (upper.includes('İNKILAP') || upper.includes('İNK')) {
+    return upper.includes('8') ? 'İNK8' : 'İNK'
+  }
+
+  // Varsayılan: ilk 6 karakter
   return upper.slice(0, 6)
 }
 

@@ -1,13 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useSchool } from '../shared/useSchool'
 import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
 import type { Day } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
 import { calculateTeacherSchedules, formatClassName, formatTimeSlot } from '../shared/pdfUtils'
-import { generateTeacherHandbookHTML } from '../shared/htmlPdfGenerator'
-import TeacherHandbookPrint from '../components/TeacherHandbookPrint'
-import TeacherSheetPrint from '../components/TeacherSheetPrint'
+import { generateTeacherHandbookHTML, generateTeacherSheetHTML } from '../shared/htmlPdfGenerator'
 
 const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
 
@@ -22,7 +20,6 @@ export default function OgretmenProgramlari() {
   const slotTimes = useMemo(() => slots.map((_, i) => formatTimeSlot(i, school)), [slots, school])
 
   const [tables] = useLocalStorage<Record<string, Record<Day, Cell[]>>>('timetables', {})
-  const [printMode, setPrintMode] = useState<'handbook' | 'sheet' | null>(null)
 
   // Calculate teacher schedules
   const teacherSchedules = useMemo(
@@ -67,14 +64,35 @@ export default function OgretmenProgramlari() {
   }
 
   const handlePrintSheet = () => {
-    setPrintMode('sheet')
-    // Wait longer for React to render
-    requestAnimationFrame(() => {
+    // Generate HTML and open in new window
+    const html = generateTeacherSheetHTML(
+      teacherSchedules,
+      teachers,
+      subjects,
+      school.schoolName || 'Hasyurt Ortaokulu',
+      slots
+    )
+
+    if (!html) {
+      alert('Ders programı bulunamadı. Önce programları oluşturun.')
+      return
+    }
+
+    const newWindow = window.open('', '_blank')
+    if (!newWindow) {
+      alert('Pop-up engelleyici aktif. Lütfen bu site için pop-up\'lara izin verin.')
+      return
+    }
+
+    newWindow.document.write(html)
+    newWindow.document.close()
+
+    // Wait for content to load then print
+    newWindow.onload = () => {
       setTimeout(() => {
-        window.print()
-        setTimeout(() => setPrintMode(null), 100)
-      }, 100)
-    })
+        newWindow.print()
+      }, 500)
+    }
   }
 
   return (
@@ -201,38 +219,6 @@ export default function OgretmenProgramlari() {
           })}
         </div>
       )}
-
-      {/* Print Components (always rendered, controlled by CSS) */}
-      <div
-        data-print-mode="handbook"
-        className="print-wrapper"
-        style={{ display: printMode === 'handbook' ? 'block' : 'none' }}
-      >
-        {printMode === 'handbook' && (
-          <TeacherHandbookPrint
-            tables={tables}
-            subjects={subjects}
-            teachers={teachers}
-            school={school}
-            slots={slots}
-          />
-        )}
-      </div>
-      <div
-        data-print-mode="sheet"
-        className="print-wrapper"
-        style={{ display: printMode === 'sheet' ? 'block' : 'none' }}
-      >
-        {printMode === 'sheet' && (
-          <TeacherSheetPrint
-            tables={tables}
-            subjects={subjects}
-            teachers={teachers}
-            school={school}
-            slots={slots}
-          />
-        )}
-      </div>
     </>
   )
 }

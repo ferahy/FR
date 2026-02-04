@@ -7,37 +7,77 @@ const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
 const LESSON_TIMES = ['08:40', '09:35', '10:35', '11:30', '13:10', '14:05', '15:00']
 
 function getSubjectAbbr(name: string): string {
-  const upper = name.toUpperCase()
-  if (upper.includes('MATEMATİK')) return 'MAT'
-  if (upper.includes('TÜRKÇE')) return 'TURKC'
-  if (upper.includes('FEN')) return 'FEN B'
-  if (upper.includes('İNGİLİZCE')) return 'İNG.'
-  if (upper.includes('SOSYAL')) return 'SOS7'
-  if (upper.includes('DİN')) return 'DİN'
-  if (upper.includes('BEDEN')) return 'BED'
-  if (upper.includes('MÜZİK')) return 'MÜZ'
-  if (upper.includes('GÖRSEL')) return 'GÖRSE'
-  if (upper.includes('BİLİŞİM')) return 'BİL.T'
-  if (upper.includes('TEKNOLOJ')) return 'TTAS'
-  if (upper.includes('REHBERLİK')) return 'REH'
-  if (name.startsWith('S.')) {
+  const upper = name.trim().toLocaleUpperCase('tr-TR')
+  if (!upper) return ''
+
+  // Seçmeli dersler (önce kontrol et)
+  if (upper.startsWith('S.') || upper.startsWith('SEÇMELİ')) {
     if (upper.includes('İNGİLİZCE')) return 'S.İNG'
     if (upper.includes('MASAL')) return 'SMD'
     if (upper.includes('PEYGAMBER')) return 'S.P.H'
     if (upper.includes('KÜLTÜR')) return 'S.KMY'
-    if (upper.includes('KURAN')) return 'S.KUR'
+    if (upper.includes('KUR') && upper.includes('AN')) return 'S.KUR'
     if (upper.includes('MATEMATİK')) return 'S.M.B'
     if (upper.includes('AFET')) return 'S.A.B'
     if (upper.includes('OYUN')) return 'S.O.E'
+    if (upper.includes('ÇEVRİ')) return 'S.ÇİD'
     if (upper.includes('MEDYA')) return 'MED'
   }
-  return name.slice(0, 6).toUpperCase()
+
+  // Özel eğitim dersleri
+  if (upper.startsWith('ÖE') || upper.includes('ÖZEL EĞİTİM')) {
+    if (upper.includes('DİN') || upper.includes('KÜLT')) return 'ÖEDK'
+    if (upper.includes('GÖRSEL')) return 'ÖEGS'
+    if (upper.includes('BEDEN')) return 'ÖEBDN'
+    if (upper.includes('MÜZ')) return 'ÖEM'
+    return 'ÖE'
+  }
+
+  // Normal dersler
+  if (upper.includes('MATEMATİK')) return 'MAT'
+  if (upper.includes('TÜRKÇE')) return 'TURKC'
+  if (upper.includes('FEN')) return 'FEN B'
+  if (upper.includes('İNGİLİZCE')) return 'İNG.'
+  if (upper.includes('SOSYAL')) {
+    // SOS7 veya SOS B olabilir
+    return upper.includes('7') ? 'SOS7' : 'SOS B'
+  }
+  if (upper.includes('DİN') || upper.includes('KÜLT')) return 'DİN'
+  if (upper.includes('BEDEN')) {
+    // BED, BEDN veya BDN olabilir
+    if (upper.includes('BEDN')) return 'BEDN'
+    if (upper.includes('BDN')) return 'BDN'
+    return 'BED'
+  }
+  if (upper.includes('MÜZİK')) return 'MÜZ'
+  if (upper.includes('GÖRSEL')) return 'GÖRSE'
+  if (upper.includes('BİLİŞİM')) {
+    return upper.includes('TEKNOLOJ') ? 'BTK' : 'BİL.T'
+  }
+  if (upper.includes('TEKNOLOJ')) {
+    if (upper.includes('TASARIM')) return 'TTAS'
+    if (upper.includes('TEKTA')) return 'TEKTA'
+    return 'TEKNO'
+  }
+  if (upper.includes('REHBERLİK')) return 'REH'
+  if (upper.includes('İNKILAP') || upper.includes('İNK')) {
+    return upper.includes('8') ? 'İNK8' : 'İNK'
+  }
+
+  // Varsayılan: ilk 6 karakter
+  return upper.slice(0, 6)
 }
 
 function getTeacherAbbr(name: string): string {
-  const parts = name.trim().split(' ')
-  if (parts.length === 1) return parts[0].slice(0, 3).toUpperCase()
-  return parts.map(p => p[0].toUpperCase()).join('.')
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .map((p) => p.toLocaleUpperCase('tr-TR'))
+    .filter(Boolean)
+
+  if (parts.length === 0) return ''
+  if (parts.length === 1) return parts[0].slice(0, 3)
+  return parts.map(p => p[0]).join('.') + '.'
 }
 
 export function generateClassHandbookHTML(
@@ -500,6 +540,369 @@ export function generateTeacherHandbookHTML(
       <div class="receipt-title">ASLINI ALDIM</div>
       <div class="receipt-date">TARİH : __/__/____</div>
     </div>
+  </div>
+</body>
+</html>`
+}
+
+export function generateClassSheetHTML(
+  tables: Record<string, ClassSchedule>,
+  subjects: Subject[],
+  teachers: Teacher[],
+  classes: Array<{ key: string; grade: string; section: string }>,
+  schoolNameFromProps: string,
+  slots: string[]
+): string {
+  const schoolNameSafe = schoolNameFromProps && schoolNameFromProps.trim() ? schoolNameFromProps : 'Hasyurt Ortaokulu'
+
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Sınıf Çarşaf - ${schoolNameSafe}</title>
+  <style>
+    @page {
+      size: A4 landscape;
+      margin: 8mm 6mm;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 5pt;
+      color: #000;
+      background: white;
+    }
+
+    .page {
+      width: 100%;
+      background: white;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 6mm;
+    }
+
+    .header h1 {
+      font-size: 11pt;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .carsaf-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 5pt;
+      table-layout: fixed;
+    }
+
+    .carsaf-table th,
+    .carsaf-table td {
+      border: 0.3mm solid #000;
+      padding: 0.8mm;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .carsaf-table th {
+      background: #f0f0f0;
+      font-weight: bold;
+    }
+
+    .carsaf-table .class-col {
+      width: 15mm;
+      font-weight: bold;
+      background: #f8f8f8;
+      font-size: 6pt;
+    }
+
+    .carsaf-table .day-header {
+      font-size: 7pt;
+      padding: 1.5mm 0.8mm;
+    }
+
+    .carsaf-table .slot-header {
+      font-size: 5pt;
+      padding: 0.8mm;
+    }
+
+    .cell-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3mm;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.05;
+    }
+
+    .cell-subject {
+      font-weight: bold;
+      font-size: 6pt;
+    }
+
+    .cell-teacher {
+      font-size: 5pt;
+      opacity: 0.8;
+    }
+
+    @media print {
+      body {
+        background: white;
+      }
+      .page {
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <h1>${schoolNameSafe} - SINIFLARIN HAFTALIK DERS PROGRAMI</h1>
+    </div>
+
+    <table class="carsaf-table">
+      <thead>
+        <tr>
+          <th rowspan="2" class="class-col">Sınıf</th>
+          ${DAYS.map(day => `
+            <th colspan="${slots.length}" class="day-header">${day}</th>
+          `).join('')}
+        </tr>
+        <tr>
+          ${DAYS.map(() =>
+            slots.map((_, idx) => `
+              <th class="slot-header">${idx + 1}</th>
+            `).join('')
+          ).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${classes.map(classItem => {
+          const schedule = tables[classItem.key]
+          if (!schedule) return ''
+
+          return `
+            <tr>
+              <td class="class-col">${classItem.grade}/${classItem.section}</td>
+              ${DAYS.map(day =>
+                slots.map((_, slotIndex) => {
+                  const cell = schedule[day]?.[slotIndex]
+                  if (!cell?.subjectId) {
+                    return '<td></td>'
+                  }
+                  const subject = subjects.find(s => s.id === cell.subjectId)
+                  const teacher = teachers.find(t => t.id === cell.teacherId)
+
+                  return `
+                    <td>
+                      <div class="cell-content">
+                        <span class="cell-subject">${subject ? getSubjectAbbr(subject.name) : '—'}</span>
+                        ${teacher ? `<span class="cell-teacher">${getTeacherAbbr(teacher.name)}</span>` : ''}
+                      </div>
+                    </td>
+                  `
+                }).join('')
+              ).join('')}
+            </tr>
+          `
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>`
+}
+
+export function generateTeacherSheetHTML(
+  teacherSchedules: Record<string, TeacherSchedule>,
+  teachers: Teacher[],
+  subjects: Subject[],
+  schoolNameFromProps: string,
+  slots: string[]
+): string {
+  const schoolNameSafe = schoolNameFromProps && schoolNameFromProps.trim() ? schoolNameFromProps : 'Hasyurt Ortaokulu'
+
+  // Calculate total hours for each teacher
+  const teacherHours = new Map<string, number>()
+  teachers.forEach(teacher => {
+    let total = 0
+    const schedule = teacherSchedules[teacher.id]
+    if (schedule) {
+      DAYS.forEach(day => {
+        schedule[day]?.forEach(cell => {
+          if (cell.classKey) total++
+        })
+      })
+    }
+    teacherHours.set(teacher.id, total)
+  })
+
+  return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Öğretmen Çarşaf - ${schoolNameSafe}</title>
+  <style>
+    @page {
+      size: A4 landscape;
+      margin: 8mm 6mm;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 5pt;
+      color: #000;
+      background: white;
+    }
+
+    .page {
+      width: 100%;
+      background: white;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 6mm;
+    }
+
+    .header h1 {
+      font-size: 11pt;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .carsaf-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 5pt;
+      table-layout: fixed;
+    }
+
+    .carsaf-table th,
+    .carsaf-table td {
+      border: 0.3mm solid #000;
+      padding: 0.8mm;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .carsaf-table th {
+      background: #f0f0f0;
+      font-weight: bold;
+    }
+
+    .carsaf-table .teacher-col {
+      width: 40mm;
+      font-weight: bold;
+      background: #f8f8f8;
+      font-size: 5.5pt;
+      text-align: left;
+      padding-left: 1.5mm;
+    }
+
+    .carsaf-table .day-header {
+      font-size: 7pt;
+      padding: 1.5mm 0.8mm;
+    }
+
+    .carsaf-table .slot-header {
+      font-size: 5pt;
+      padding: 0.8mm;
+    }
+
+    .cell-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3mm;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.05;
+    }
+
+    .cell-class {
+      font-weight: bold;
+      font-size: 6pt;
+    }
+
+    .cell-subject {
+      font-size: 5pt;
+      opacity: 0.8;
+    }
+
+    @media print {
+      body {
+        background: white;
+      }
+      .page {
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <h1>${schoolNameSafe} - ÖĞRETMENLERİN HAFTALIK DERS PROGRAMI</h1>
+    </div>
+
+    <table class="carsaf-table">
+      <thead>
+        <tr>
+          <th rowspan="2" class="teacher-col"></th>
+          ${DAYS.map(day => `
+            <th colspan="${slots.length}" class="day-header">${day}</th>
+          `).join('')}
+        </tr>
+        <tr>
+          ${DAYS.map(() =>
+            slots.map((_, idx) => `
+              <th class="slot-header">${idx + 1}</th>
+            `).join('')
+          ).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${teachers.map((teacher, index) => {
+          const schedule = teacherSchedules[teacher.id]
+          if (!schedule) return ''
+          const totalHours = teacherHours.get(teacher.id) || 0
+
+          return `
+            <tr>
+              <td class="teacher-col">${index + 1}- ${teacher.name.toUpperCase()} ${totalHours > 0 ? totalHours : ''}</td>
+              ${DAYS.map(day =>
+                slots.map((_, slotIndex) => {
+                  const cell = schedule[day]?.[slotIndex]
+                  if (!cell?.classKey) {
+                    return '<td></td>'
+                  }
+
+                  return `
+                    <td>
+                      <div class="cell-content">
+                        <span class="cell-class">${cell.className || ''}</span>
+                        <span class="cell-subject">${cell.subjectName ? getSubjectAbbr(cell.subjectName) : ''}</span>
+                      </div>
+                    </td>
+                  `
+                }).join('')
+              ).join('')}
+            </tr>
+          `
+        }).join('')}
+      </tbody>
+    </table>
   </div>
 </body>
 </html>`
