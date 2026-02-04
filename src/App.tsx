@@ -82,13 +82,13 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'radial-gradient(circle at 20% 20%, rgba(79,70,229,0.16), transparent 35%), radial-gradient(circle at 80% 0%, rgba(14,165,233,0.18), transparent 32%), #0f172a',
+      background: 'radial-gradient(circle at 20% 20%, rgba(79,70,229,0.12), transparent 35%), radial-gradient(circle at 80% 0%, rgba(14,165,233,0.14), transparent 32%), #0b1224',
       padding: 24
     }}>
-      <div style={{ maxWidth: 420, width: '100%' }}>
-        <div className="glass" style={{ padding: 32, background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 30px 80px rgba(0,0,0,0.45)', backdropFilter: 'blur(14px)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
-            <div style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.15)', background: '#0f172a' }}>
+      <div style={{ maxWidth: 820, width: '100%' }}>
+        <div className="glass" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 40px 90px rgba(0,0,0,0.5)', backdropFilter: 'blur(16px)', overflow: 'hidden', borderRadius: 16 }}>
+          <div style={{ background: 'linear-gradient(135deg,#0b1224 0%, #0f172a 40%, #0f172a 100%)', padding: 28, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 16, borderRight: '1px solid rgba(255,255,255,0.04)' }}>
+            <div style={{ width: 74, height: 74, borderRadius: 14, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.15)', background: '#0f172a' }}>
               <img
                 src="https://upload.wikimedia.org/wikipedia/en/3/39/Fenerbah%C3%A7e_logo.png"
                 alt="Fenerbahçe"
@@ -96,48 +96,53 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
               />
             </div>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#e2e8f0', letterSpacing: 0.3 }}>Okul Program</div>
-              <div style={{ color: '#a5b4fc', fontSize: 14, fontWeight: 600 }}>Fenerbahçe ruhuyla giriş yap</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: '#e2e8f0', letterSpacing: 0.4 }}>Okul Program</div>
+              <div style={{ color: '#a5b4fc', fontSize: 15, fontWeight: 600, marginTop: 4 }}>Fenerbahçe ruhuyla planlayın</div>
+            </div>
+            <div style={{ color: '#cbd5e1', fontSize: 14, lineHeight: 1.5 }}>
+              Tüm ders programlarını tek yerden yönetin. Buluta kaydedin, her cihazdan devam edin.
             </div>
           </div>
-          <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
-            <div className="field">
-              <span className="field-label">Kullanıcı Adı</span>
-              <input
-                className="input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoComplete="username"
-                placeholder="Kullanıcı adınız"
-              />
-            </div>
-            <div className="field">
-              <span className="field-label">Şifre</span>
-              <div style={{ position: 'relative' }}>
+          <div style={{ padding: 32, background: 'rgba(15,23,42,0.85)' }}>
+            <form onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
+              <div className="field">
+                <span className="field-label">Kullanıcı Adı</span>
                 <input
                   className="input"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  placeholder="Şifreniz"
-                  style={{ paddingRight: 80 }}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoComplete="username"
+                  placeholder="Kullanıcı adınız"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="btn btn-outline btn-sm"
-                  style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
-                >
-                  {showPassword ? 'Gizle' : 'Göster'}
-                </button>
               </div>
-            </div>
-            {error && <div className="error-text" style={{ marginTop: 2 }}>{error}</div>}
-            <button className="btn btn-primary" type="submit" style={{ width: '100%', marginTop: 4 }}>
-              Giriş
-            </button>
-          </form>
+              <div className="field">
+                <span className="field-label">Şifre</span>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="input"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    placeholder="Şifreniz"
+                    style={{ paddingRight: 88 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="btn btn-outline btn-sm"
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
+                  >
+                    {showPassword ? 'Gizle' : 'Göster'}
+                  </button>
+                </div>
+              </div>
+              {error && <div className="error-text" style={{ marginTop: 2 }}>{error}</div>}
+              <button className="btn btn-primary" type="submit" style={{ width: '100%', marginTop: 4 }}>
+                Giriş
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
