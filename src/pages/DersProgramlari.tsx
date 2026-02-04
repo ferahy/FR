@@ -582,6 +582,8 @@ const SUBJECT_ALIASES: Record<string, string> = {
   yabancidilingilizce: 'ingilizce',
   din: 'dinkulturu',
   dinkulturu: 'dinkulturu',
+  sosyal: 'sosyal',
+  sosyalbilgiler: 'sosyal',
   beden: 'bedenegitimi',
   bedeneğitimi: 'bedenegitimi',
   bedenegitimi: 'bedenegitimi',
