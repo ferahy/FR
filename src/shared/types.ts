@@ -3,6 +3,8 @@ export type SubjectRule = {
   syncAcrossSections?: boolean
   maxConsecutive?: number
   minDays?: number
+  preferBlockScheduling?: boolean
+  avoidSlots?: string[]
 }
 
 export type Subject = {

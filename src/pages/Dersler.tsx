@@ -17,6 +17,8 @@ type FormState = {
   perDayMax: string
   maxConsecutive: string
   minDays: string
+  preferBlockScheduling: boolean
+  avoidSlots: string[]
   color: string
 }
 
@@ -61,6 +63,8 @@ export default function Dersler() {
         perDayMax: data.perDayMax ? Math.max(0, toInt(data.perDayMax)) : 0,
         maxConsecutive: data.maxConsecutive ? Math.max(0, toInt(data.maxConsecutive)) : 0,
         minDays: data.minDays ? Math.max(0, toInt(data.minDays)) : 0,
+        preferBlockScheduling: data.preferBlockScheduling,
+        avoidSlots: data.avoidSlots,
       },
       color: data.color,
     }
@@ -262,6 +266,8 @@ function SubjectModal({
     perDayMax: init?.rule?.perDayMax ? String(init.rule.perDayMax) : '0',
     maxConsecutive: init?.rule?.maxConsecutive ? String(init.rule.maxConsecutive) : '0',
     minDays: init?.rule?.minDays ? String(init.rule.minDays) : '0',
+    preferBlockScheduling: init?.rule?.preferBlockScheduling ?? true,
+    avoidSlots: init?.rule?.avoidSlots ?? [],
     color: init?.color ?? '#93c5fd',
   })
 
@@ -568,6 +574,61 @@ function SubjectModal({
                 {errors.minDays && <span id="err-md" className="error-text">{errors.minDays}</span>}
               </>
             )}
+          </div>
+        </div>
+
+        <div className="field-row">
+          <div className="field" style={{ flex: '1 1 240px' }}>
+            <span className="field-label">Aynı Gün Blok Yerleştirme</span>
+            <div className="help-text" style={{ marginTop: 4 }}><strong>Bilgi:</strong> Açıkken haftalık 2 saatlik dersler aynı gün arka arkaya yerleştirilir (örn: Beden Eğitimi).</div>
+            <div className="segmented" role="group" aria-label="Blok yerleştirme modu">
+              <button type="button" className={"seg " + (!state.preferBlockScheduling ? 'active blocked' : '')} aria-pressed={!state.preferBlockScheduling} onClick={() => setState((s) => ({ ...s, preferBlockScheduling: false }))}>Kapalı</button>
+              <button type="button" className={"seg " + (state.preferBlockScheduling ? 'active free' : '')} aria-pressed={state.preferBlockScheduling} onClick={() => setState((s) => ({ ...s, preferBlockScheduling: true }))}>Açık</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="field">
+          <span className="field-label">Kaçınılacak Saatler</span>
+          <div className="help-text" style={{ marginTop: 4 }}><strong>Bilgi:</strong> Bu dersin yerleştirilmeyeceği ders saatlerini seçin (örn: sabah ilk saat, öğleden sonra ilk saat).</div>
+          <div className="hours-grid" style={{ gap: 8 }}>
+            {Array.from({ length: dailyLessons || 7 }, (_, i) => {
+              const slotId = `S${i + 1}`
+              const isSelected = state.avoidSlots.includes(slotId)
+              const isFirstPeriod = i === 0
+              const isAfternoonFirst = i === 4
+              let label = `${i + 1}. Saat`
+              if (isFirstPeriod) label += ' (Sabah İlk)'
+              if (isAfternoonFirst) label += ' (Öğleden Sonra İlk)'
+
+              return (
+                <label key={slotId} className="hours-item" style={{ cursor: 'pointer' }}>
+                  <div className="segmented" role="group" aria-label={label}>
+                    <button
+                      type="button"
+                      className={`seg ${isSelected ? 'active blocked' : ''}`}
+                      aria-pressed={isSelected}
+                      onClick={() => setState((s) => ({
+                        ...s,
+                        avoidSlots: isSelected
+                          ? s.avoidSlots.filter(x => x !== slotId)
+                          : [...s.avoidSlots, slotId]
+                      }))}
+                      style={{ width: '100%' }}
+                    >
+                      {isSelected ? (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          {label}
+                        </>
+                      ) : (
+                        label
+                      )}
+                    </button>
+                  </div>
+                </label>
+              )
+            })}
           </div>
         </div>
 

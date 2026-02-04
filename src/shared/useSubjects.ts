@@ -50,12 +50,23 @@ export function useSubjects() {
   }, [setSubjects])
 
   const resetToDefaults = useCallback(() => {
-    const defaults = DEFAULT_TEMPLATES.map((tpl) => ({
-      id: genId(),
-      name: tpl.name,
-      weeklyHoursByGrade: tpl.weeklyHoursByGrade,
-      rule: { perDayMax: 2, maxConsecutive: 2 },
-    }))
+    const defaults = DEFAULT_TEMPLATES.map((tpl) => {
+      const isGorsel = tpl.name.toLowerCase().includes('görsel')
+      const isMuzik = tpl.name.toLowerCase().includes('müzik')
+      const isRehberlik = tpl.name.toLowerCase().includes('rehber')
+
+      return {
+        id: genId(),
+        name: tpl.name,
+        weeklyHoursByGrade: tpl.weeklyHoursByGrade,
+        rule: {
+          perDayMax: 2,
+          maxConsecutive: 2,
+          preferBlockScheduling: true, // Tüm dersler için blok yerleştirme açık
+          avoidSlots: isGorsel || isMuzik ? ['S1'] : isRehberlik ? ['S1', 'S5'] : [], // Sanat dersleri ve rehberlik sabah ilk saatte değil
+        },
+      }
+    })
     setSubjects(defaults)
   }, [setSubjects])
 
