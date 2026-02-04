@@ -429,7 +429,15 @@ function AvailabilityDialog({ open, onClose, teacher, onSave, slots }:{
   onSave: (unavailable: Partial<Record<Day, string[]>>) => void
   slots: string[]
 }) {
-  const [map, setMap] = useState<Partial<Record<Day, string[]>>>(teacher?.unavailable ?? {})
+  const [map, setMap] = useState<Partial<Record<Day, string[]>>>({})
+
+  // Update state when teacher changes or dialog opens
+  useEffect(() => {
+    if (open && teacher) {
+      setMap(teacher.unavailable ?? {})
+    }
+  }, [open, teacher])
+
   const title = teacher ? `Uygunluk — ${teacher.name}` : 'Uygunluk'
   const toggle = (day: Day, slot: string) => {
     setMap(prev => {
