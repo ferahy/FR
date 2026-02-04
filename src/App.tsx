@@ -86,14 +86,18 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
       padding: 24
     }}>
       <div style={{ maxWidth: 420, width: '100%' }}>
-        <div className="glass" style={{ padding: 32, background: 'rgba(15,23,42,0.82)', border: '1px solid rgba(255,255,255,0.04)', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#6366f1,#14b8a6)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 700 }}>
-              OP
+        <div className="glass" style={{ padding: 32, background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 30px 80px rgba(0,0,0,0.45)', backdropFilter: 'blur(14px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+            <div style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.15)', background: '#0f172a' }}>
+              <img
+                src="https://upload.wikimedia.org/wikipedia/en/3/39/Fenerbah%C3%A7e_logo.png"
+                alt="Fenerbahçe"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
             </div>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>Okul Program</div>
-              <div style={{ color: '#94a3b8', fontSize: 14 }}>Zaman tablona erişmek için giriş yap</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#e2e8f0', letterSpacing: 0.3 }}>Okul Program</div>
+              <div style={{ color: '#a5b4fc', fontSize: 14, fontWeight: 600 }}>Fenerbahçe ruhuyla giriş yap</div>
             </div>
           </div>
           <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
