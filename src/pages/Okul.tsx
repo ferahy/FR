@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useLocalStorage } from '../shared/useLocalStorage'
-import { DEFAULT_GRADES } from '../shared/useSchool'
 
 type GradeConfig = {
   grade: string
@@ -51,8 +50,7 @@ export default function Okul() {
 
   const addNextGrade = () => {
     const input = window.prompt('Eklemek istediğiniz sınıfı yazın (ör: 5, 6, 7, 8):')
-    if (!input) return
-    const grade = input.trim()
+    const grade = input?.trim()
     if (!grade) return
     setConfig((c) => {
       if (c.grades.some((g) => g.grade === grade)) return c
@@ -73,10 +71,6 @@ export default function Okul() {
         return { ...g, sections: [...g.sections, next] }
       }),
     }))
-  }
-
-  const resetGrades = () => {
-    setConfig((c) => ({ ...c, grades: DEFAULT_GRADES }))
   }
 
   const removeSection = (grade: string, section: string) => {
@@ -144,12 +138,7 @@ export default function Okul() {
       </section>
 
       <section className="glass p-6">
-        <div className="section-head" style={{ alignItems: 'center', gap: 8 }}>
-          <div style={{ marginLeft: 'auto' }}>
-            <button className="btn btn-outline" onClick={resetGrades}>
-              Varsayılan Şubeleri Getir
-            </button>
-          </div>
+        <div className="section-head" style={{ alignItems: 'flex-start', gap: 8 }}>
           <h3 className="section-title" style={{ marginTop: 0, marginBottom: 4 }}>Sınıflar ve Şubeler</h3>
         </div>
 
@@ -206,4 +195,4 @@ function nextSectionLetter(existing: string[]): string {
   return `A${i}`
 }
 
-// nextGrade artık kullanılmıyor (manuel giriş var)
+// nextGrade kaldırıldı; sınıf ekleme kullanıcı girdisiyle yapılıyor.
