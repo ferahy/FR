@@ -402,7 +402,7 @@ export default function DersProgramlari() {
           <button className="btn btn-outline" onClick={() => setShowSheet(true)} disabled={!Object.keys(tables ?? {}).length}>Çarşaf Görünüm</button>
           <button className="btn btn-outline" onClick={handlePrintHandbooks} disabled={!Object.keys(tables ?? {}).length}>📄 Sınıf El PDF</button>
           <button className="btn btn-outline" onClick={handlePrintSheet} disabled={!Object.keys(tables ?? {}).length}>📊 Sınıf Çarşaf PDF</button>
-          <button className="btn btn-primary" onClick={generate}>RFT</button>
+          <button className="btn btn-primary" onClick={generate}>Programları Oluştur</button>
         </div>
       </div>
 
