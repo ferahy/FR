@@ -24,7 +24,7 @@ export default function KantePopup({ onClose }: Props) {
         <div style={{ flex: '1 1 220px' }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Hoş geldin Kante! 💛💙</div>
           <div style={{ fontSize: 13, lineHeight: 1.4, color: '#cbd5e1' }}>
-            Orta saha “gel” dedi, Kante “tamam” dedi. Tribünler çekirdek hazır, şampiyonluk için ekstra benzin: 5 bidon. 😄
+            Kadıköy’de yeni kural: orta sahadan içeri GS pasaportla girer, Kante girmeden çıkmaz. Çekirdek hazır, üçlüler 1907 desibel! 😄
           </div>
         </div>
         <button className="btn btn-outline btn-sm" onClick={onClose} style={{ marginLeft: 'auto' }}>Kapat</button>
