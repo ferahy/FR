@@ -147,7 +147,10 @@ export function getTeacherAbbreviation(teacherName: string): string {
 
 // Saat dilimlerini formatla
 export function formatTimeSlot(index: number, school: { dailyLessons?: number; lessonDuration?: number; breakDuration?: number }): string {
-  // Başlangıç saati: 08:40
+  const FIXED_SLOT_TIMES = ['08:40', '09:35', '10:35', '11:30', '13:10', '14:05', '15:00']
+  if (index < FIXED_SLOT_TIMES.length) return FIXED_SLOT_TIMES[index]
+
+  // Fallback hesaplama (uzarsa)
   const startHour = 8
   const startMinute = 40
   const lessonDuration = school.lessonDuration || 40
