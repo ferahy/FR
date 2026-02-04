@@ -113,10 +113,11 @@ export default function DersProgramlari() {
         if (count > 0) subjectDemand[s.id] = count
       }
 
-      // PHASE 1: Place block subjects STRICTLY as blocks
+      // PHASE 1: Place block subjects STRICTLY as blocks (same day, contiguous)
       for (const [subjId, count] of Object.entries(subjectDemand)) {
         const subject = subjects.find(s => s.id === subjId)
-        if (!subject?.rule?.preferBlockScheduling) continue
+        if (!subject) continue
+        if (!shouldBlockSubject(subject, gradeId)) continue
 
         const blocksNeeded = Math.floor(count / 2)
         const singleNeeded = count % 2
@@ -219,7 +220,9 @@ export default function DersProgramlari() {
       for (const [subjId, count] of Object.entries(subjectDemand)) {
         if (count <= 0) continue
         const subject = subjects.find(s => s.id === subjId)
-        if (subject?.rule?.preferBlockScheduling) continue // Blok dersler bu fazda dağılmasın
+        if (!subject) continue
+        const blockSubject = shouldBlockSubject(subject, gradeId)
+        if (blockSubject) continue // Blok dersler bu fazda dağılmasın
         for (let i = 0; i < count; i++) {
           pool.push(subjId)
         }
@@ -498,6 +501,13 @@ function buildDemand(subjects: ReturnType<typeof useSubjects>['subjects'], grade
     for (let i = 0; i < n; i++) arr.push(s.id)
   }
   return arr
+}
+
+function shouldBlockSubject(subject: ReturnType<typeof useSubjects>['subjects'][number], gradeId: string): boolean {
+  const hours = subject.weeklyHoursByGrade[gradeId] ?? 0
+  // Varsayılan: haftalık 2 saatlik dersler ve blok tercihi açık olanlar aynı gün blok yerleştirilsin
+  const prefersBlock = subject.rule?.preferBlockScheduling ?? true
+  return prefersBlock && hours === 2
 }
 
 function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: string, gradeId: string, day: Day, slotIndex: number, opts?: { commit?: boolean; requiredTeacherId?: string; occupied?: Map<string, Set<string>> }): string | undefined {
