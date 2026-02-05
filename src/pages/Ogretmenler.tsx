@@ -422,7 +422,6 @@ function TeacherModal({ open, onClose, onSave, initial, subjects, grades, nameRe
               {state.subjectIds.map((id) => {
                 const subjName = subjects.find(s => s.id === id)?.name || id
                 const pref = state.preferredBySubject[id] ?? { mode: 'all', grades: [] }
-                const selectedGrades = pref.grades.map(g => grades.find(x => x.id === g)?.label || g)
                 return (
                   <div
                     key={id}

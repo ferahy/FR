@@ -26,7 +26,7 @@ const DEFAULT_TEMPLATES: SubjectTemplate[] = [
   { name: 'Rehberlik ve Kariyer Planlama', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
   // Seçmeli dersler
   { name: 'Seçmeli Masal ve Destanlar', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 0 } },
-  { name: 'Seçmeli İngilizce', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 2, '8': 0 } },
+  { name: 'Seçmeli İngilizce', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 0 } },
   { name: 'Seçmeli Peygamberimizin Hayatı', weeklyHoursByGrade: { '5': 2, '6': 0, '7': 2, '8': 0 } },
   { name: 'Seçmeli KMY', weeklyHoursByGrade: { '5': 0, '6': 2, '7': 0, '8': 2 } },
   { name: 'Seçmeli Medya Okuryazarlığı', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },

@@ -14,65 +14,6 @@ const DAYS: Day[] = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma']
 type Cell = { subjectId?: string; teacherId?: string }
 type ClassKey = string // e.g. "5-A"
 
-const REQUIRED_HOURS: Record<string, Record<string, number>> = {
-  '5': {
-    'Türkçe': 6,
-    'Matematik': 5,
-    'Fen Bilimleri': 4,
-    'Sosyal Bilgiler': 3,
-    'İngilizce': 3,
-    'Din Kültürü': 2,
-    'Görsel Sanatlar': 1,
-    'Müzik': 1,
-    'Beden Eğitimi': 2,
-    'Bilişim': 2,
-    'Rehberlik': 1,
-    'Seçmeli': 5,
-  },
-  '6': {
-    'Türkçe': 6,
-    'Matematik': 5,
-    'Fen Bilimleri': 4,
-    'Sosyal Bilgiler': 3,
-    'İngilizce': 3,
-    'Din Kültürü': 2,
-    'Görsel Sanatlar': 1,
-    'Müzik': 1,
-    'Beden Eğitimi': 2,
-    'Bilişim': 2,
-    'Rehberlik': 1,
-    'Seçmeli': 5,
-  },
-  '7': {
-    'Türkçe': 5,
-    'Matematik': 5,
-    'Fen Bilimleri': 4,
-    'Sosyal Bilgiler': 3,
-    'İngilizce': 4,
-    'Din Kültürü': 2,
-    'Görsel Sanatlar': 1,
-    'Müzik': 1,
-    'Beden Eğitimi': 2,
-    'Teknoloji ve Tasarım': 2,
-    'Rehberlik': 1,
-    'Seçmeli': 5,
-  },
-  '8': {
-    'Türkçe': 5,
-    'Matematik': 5,
-    'Fen Bilimleri': 4,
-    'İnkılap Tarihi': 2,
-    'İngilizce': 4,
-    'Din Kültürü': 2,
-    'Görsel Sanatlar': 1,
-    'Müzik': 1,
-    'Beden Eğitimi': 2,
-    'Teknoloji ve Tasarım': 2,
-    'Rehberlik': 1,
-    'Seçmeli': 6,
-  },
-}
-
 export default function DersProgramlari() {
   const school = useSchool()
   const gradeOptions = useGrades()
@@ -387,6 +328,7 @@ export default function DersProgramlari() {
       return { classKey: c.key, deficits: def }
     }).filter(item => item.deficits.length > 0)
   }, [classes, subjects, tables])
+  const totalDeficits = classDeficits.reduce((sum, item) => sum + item.deficits.length, 0)
 
   return (
     <>
@@ -415,11 +357,9 @@ export default function DersProgramlari() {
                   <div className="timetable-head">
                     <div className="title">{c.grade}. Sınıf — {c.section}</div>
                     <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                      {REQUIRED_HOURS[c.grade] && (
-                        <button className="btn btn-outline btn-sm" type="button" onClick={() => setRequirementsGrade(c.grade)}>
-                          Zorunlu Dersler
-                        </button>
-                      )}
+                      <button className="btn btn-outline btn-sm" type="button" onClick={() => setRequirementsGrade(c.grade)}>
+                        Zorunlu Dersler
+                      </button>
                       {tables[c.key] && <div className="tt-status" aria-label="Oluşturuldu">Oluşturuldu</div>}
                     </div>
                   </div>
@@ -499,7 +439,7 @@ export default function DersProgramlari() {
 
       {classDeficits.length > 0 && (
         <div className="muted" style={{ marginTop: 16, fontSize: 12, lineHeight: 1.4 }}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>Eksik Dersler</div>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Eksik Dersler ({totalDeficits})</div>
           {classDeficits.map(item => (
             <div key={item.classKey} style={{ marginBottom: 4 }}>
               <span style={{ fontWeight: 600 }}>{item.classKey}:</span>{' '}
@@ -510,12 +450,22 @@ export default function DersProgramlari() {
       )}
 
       <Modal open={!!requirementsGrade} onClose={() => setRequirementsGrade(null)} title={`${requirementsGrade ?? ''}. Sınıf Zorunlu Ders Saatleri`}>
-        {requirementsGrade && REQUIRED_HOURS[requirementsGrade] ? (
-          <ul style={{ paddingLeft: 16, margin: 0, lineHeight: 1.4 }}>
-            {Object.entries(REQUIRED_HOURS[requirementsGrade]).map(([name, hours]) => (
-              <li key={name}>{name}: {hours} saat</li>
-            ))}
-          </ul>
+        {requirementsGrade ? (
+          (() => {
+            const required = getRequiredSubjectsForGrade(subjects, requirementsGrade)
+            if (!required.length) return <div className="muted">Bu sınıf için zorunlu ders bilgisi yok.</div>
+            const total = required.reduce((sum, r) => sum + r.hours, 0)
+            return (
+              <ul style={{ paddingLeft: 16, margin: 0, lineHeight: 1.4, listStyle: 'disc' }}>
+                {required.map(item => (
+                  <li key={item.id}>{item.name}: {item.hours} saat</li>
+                ))}
+                <li style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.12)', fontWeight: 600 }}>
+                  Toplam: {total} saat
+                </li>
+              </ul>
+            )
+          })()
         ) : (
           <div className="muted">Bu sınıf için zorunlu ders bilgisi tanımlı değil.</div>
         )}
@@ -601,50 +551,13 @@ function shouldBlockSubject(subject: ReturnType<typeof useSubjects>['subjects'][
   return prefersBlock && hours === 2
 }
 
-function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/ç/g, 'c')
-    .replace(/ğ/g, 'g')
-    .replace(/ı/g, 'i')
-    .replace(/ö/g, 'o')
-    .replace(/ş/g, 's')
-    .replace(/ü/g, 'u')
-    .replace(/[^a-z0-9]/g, '')
-}
-
-const SUBJECT_ALIASES: Record<string, string> = {
-  fenbilimleri: 'fen',
-  fen: 'fen',
-  ingilizce: 'ingilizce',
-  yabancidilingilizce: 'ingilizce',
-  din: 'dinkulturu',
-  dinkulturu: 'dinkulturu',
-  sosyal: 'sosyal',
-  sosyalbilgiler: 'sosyal',
-  beden: 'bedenegitimi',
-  bedeneğitimi: 'bedenegitimi',
-  bedenegitimi: 'bedenegitimi',
-}
-
-function findSubjectIdByName(subjects: ReturnType<typeof useSubjects>['subjects'], targetName: string): string | undefined {
-  const raw = normalizeName(targetName)
-  const target = SUBJECT_ALIASES[raw] ?? raw
-  const match = subjects.find(s => {
-    const norm = normalizeName(s.name)
-    const normCanon = SUBJECT_ALIASES[norm] ?? norm
-    return normCanon === target
-  })
-  return match?.id
-}
-
 function calculateDeficits(
   c: { key: string; grade: string; section: string },
   schedule: Record<Day, Cell[]> | undefined,
   subjects: ReturnType<typeof useSubjects>['subjects']
 ): { name: string; missing: number }[] {
-  const required = REQUIRED_HOURS[c.grade]
-  if (!required) return []
+  const required = getRequiredSubjectsForGrade(subjects, c.grade)
+  if (!required.length) return []
 
   const counts: Record<string, number> = {}
   if (schedule) {
@@ -656,14 +569,25 @@ function calculateDeficits(
     })
   }
 
-  const deficits: { name: string; missing: number }[] = []
-  for (const [name, hours] of Object.entries(required)) {
-    const subjId = findSubjectIdByName(subjects, name)
-    const current = subjId ? counts[subjId] ?? 0 : 0
-    const missing = hours - current
-    if (missing > 0) deficits.push({ name, missing })
-  }
-  return deficits
+  return required
+    .map(req => {
+      const current = counts[req.id] ?? 0
+      return { name: req.name, missing: req.hours - current }
+    })
+    .filter(d => d.missing > 0)
+}
+
+function getRequiredSubjectsForGrade(
+  subjects: ReturnType<typeof useSubjects>['subjects'],
+  gradeId: string
+): { id: string; name: string; hours: number }[] {
+  return subjects
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      hours: s.weeklyHoursByGrade[gradeId] ?? 0,
+    }))
+    .filter((s) => s.hours > 0)
 }
 
 function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: string, gradeId: string, day: Day, slotIndex: number, opts?: { commit?: boolean; requiredTeacherId?: string; occupied?: Map<string, Set<string>> }): string | undefined {
@@ -680,7 +604,9 @@ function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: 
     const subs = getTeacherSubjectIds(t)
     if (!subs.includes(subjectId)) return false
     // preferred grades check
-    if (t.preferredGrades && t.preferredGrades.length > 0 && !t.preferredGrades.includes(gradeId)) return false
+    const subjPref = t.preferredGradesBySubject?.[subjectId]
+    const prefGrades = (subjPref && subjPref.length ? subjPref : t.preferredGrades) ?? []
+    if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
     // availability
     const blocked = t.unavailable?.[day]?.includes(`S${slotIndex + 1}`)
     if (blocked) return false
