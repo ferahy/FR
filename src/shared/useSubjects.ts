@@ -7,35 +7,36 @@ const STORAGE_KEY = 'ferah_subjects_v2'
 
 type SubjectTemplate = {
   name: string
+  abbreviation: string
   weeklyHoursByGrade: Record<string, number>
 }
 
 const DEFAULT_TEMPLATES: SubjectTemplate[] = [
-  { name: 'Türkçe', weeklyHoursByGrade: { '5': 6, '6': 6, '7': 5, '8': 5 } },
-  { name: 'Matematik', weeklyHoursByGrade: { '5': 5, '6': 5, '7': 5, '8': 5 } },
-  { name: 'Fen Bilimleri', weeklyHoursByGrade: { '5': 4, '6': 4, '7': 4, '8': 4 } },
-  { name: 'Sosyal Bilgiler', weeklyHoursByGrade: { '5': 3, '6': 3, '7': 3, '8': 0 } },
-  { name: 'İngilizce', weeklyHoursByGrade: { '5': 3, '6': 3, '7': 4, '8': 4 } },
-  { name: 'DİKAB', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2, 'Özel Eğitim': 0 } },
-  { name: 'Görsel Sanatlar', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
-  { name: 'Müzik', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
-  { name: 'Beden Eğitimi', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2, 'Özel Eğitim': 0 } },
-  { name: 'Bilişim Teknolojileri', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 0, '8': 0 } },
-  { name: 'Teknoloji ve Tasarım', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 2, '8': 2 } },
-  { name: 'İnkılap Tarihi', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
-  { name: 'Rehberlik ve Kariyer Planlama', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
+  { name: 'Türkçe', abbreviation: 'TURKC', weeklyHoursByGrade: { '5': 6, '6': 6, '7': 5, '8': 5 } },
+  { name: 'Matematik', abbreviation: 'MAT', weeklyHoursByGrade: { '5': 5, '6': 5, '7': 5, '8': 5 } },
+  { name: 'Fen Bilimleri', abbreviation: 'FEN B', weeklyHoursByGrade: { '5': 4, '6': 4, '7': 4, '8': 4 } },
+  { name: 'Sosyal Bilgiler', abbreviation: 'SOS', weeklyHoursByGrade: { '5': 3, '6': 3, '7': 3, '8': 0 } },
+  { name: 'İngilizce', abbreviation: 'İNG', weeklyHoursByGrade: { '5': 3, '6': 3, '7': 4, '8': 4 } },
+  { name: 'DİKAB', abbreviation: 'DİN', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2, 'Özel Eğitim': 0 } },
+  { name: 'Görsel Sanatlar', abbreviation: 'GÖRSE', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
+  { name: 'Müzik', abbreviation: 'MÜZ', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
+  { name: 'Beden Eğitimi', abbreviation: 'BED', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2, 'Özel Eğitim': 0 } },
+  { name: 'Bilişim Teknolojileri', abbreviation: 'BİL.T', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 0, '8': 0 } },
+  { name: 'Teknoloji ve Tasarım', abbreviation: 'TTAS', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 2, '8': 2 } },
+  { name: 'İnkılap Tarihi', abbreviation: 'İNK', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
+  { name: 'Rehberlik ve Kariyer Planlama', abbreviation: 'REH', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
   // Seçmeli dersler
-  { name: 'Seçmeli Masal ve Destanlar', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 0 } },
-  { name: 'Seçmeli İngilizce', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 0 } },
-  { name: 'Seçmeli Peygamberimizin Hayatı', weeklyHoursByGrade: { '5': 2, '6': 0, '7': 2, '8': 0 } },
-  { name: 'Seçmeli KMY', weeklyHoursByGrade: { '5': 0, '6': 2, '7': 0, '8': 2 } },
-  { name: 'Seçmeli Medya Okuryazarlığı', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
-  { name: 'Seçmeli Spor ve Fiziki Etkinlikler', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
+  { name: 'Seçmeli Masal ve Destanlar', abbreviation: 'S.M.D', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 0 } },
+  { name: 'Seçmeli İngilizce', abbreviation: 'S.İNG', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 0 } },
+  { name: 'Seçmeli Peygamberimizin Hayatı', abbreviation: 'S.P.H', weeklyHoursByGrade: { '5': 2, '6': 0, '7': 2, '8': 0 } },
+  { name: 'Seçmeli KMY', abbreviation: 'S.KMY', weeklyHoursByGrade: { '5': 0, '6': 2, '7': 0, '8': 2 } },
+  { name: 'Seçmeli Medya Okuryazarlığı', abbreviation: 'S.MED', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
+  { name: 'Seçmeli Spor ve Fiziki Etkinlikler', abbreviation: 'S.SFE', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
   // Özel Eğitim
-  { name: 'Özel Eğitim Din Kültürü', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
-  { name: 'Özel Eğitim Beden', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
-  { name: 'Özel Eğitim Görsel Sanatlar', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
-  { name: 'Özel Eğitim Müzik', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
+  { name: 'Özel Eğitim Din Kültürü', abbreviation: 'ÖEDK', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
+  { name: 'Özel Eğitim Beden', abbreviation: 'ÖEBDN', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
+  { name: 'Özel Eğitim Görsel Sanatlar', abbreviation: 'ÖEGS', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
+  { name: 'Özel Eğitim Müzik', abbreviation: 'ÖEM', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
 ]
 
 export const DEFAULT_SUBJECTS: Subject[] = [] // başlangıç boş; kullanıcı isterse doldurur
@@ -63,19 +64,20 @@ export function useSubjects() {
 
   const resetToDefaults = useCallback(() => {
     const defaults = DEFAULT_TEMPLATES.map((tpl) => {
-      const isGorsel = tpl.name.toLowerCase().includes('görsel')
-      const isMuzik = tpl.name.toLowerCase().includes('müzik')
-      const isRehberlik = tpl.name.toLowerCase().includes('rehber')
+      const lower = tpl.name.toLowerCase()
+      const isRehberlik = lower.includes('rehber')
+      const isBeden = lower.includes('beden')
 
       return {
         id: genId(),
         name: tpl.name,
+        abbreviation: tpl.abbreviation,
         weeklyHoursByGrade: tpl.weeklyHoursByGrade,
         rule: {
-          perDayMax: 2,
-          maxConsecutive: 2,
-          preferBlockScheduling: true, // Tüm dersler için blok yerleştirme açık
-          avoidSlots: isGorsel || isMuzik ? ['S1'] : isRehberlik ? ['S1', 'S5'] : [], // Sanat dersleri ve rehberlik sabah ilk saatte değil
+          perDayMax: 0, // sınıfın ihtiyacını tamamlamak için gün başına sınır yok
+          maxConsecutive: isBeden ? 3 : 3,
+          preferBlockScheduling: isBeden || lower.includes('seçmeli'), // beden zorunlu, seçmeliler mümkünse blok
+          avoidSlots: isRehberlik ? ['S1'] : [], // rehberlik ilk saat olmasın; diğerleri serbest
         },
       }
     })

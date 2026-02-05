@@ -10,6 +10,7 @@ export type SubjectRule = {
 export type Subject = {
   id: string
   name: string
+  abbreviation?: string
   weeklyHoursByGrade: Record<string, number>
   rule?: SubjectRule
   color?: string

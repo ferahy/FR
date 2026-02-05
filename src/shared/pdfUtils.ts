@@ -6,6 +6,7 @@ export type TeacherSchedule = Record<Day, Array<{
   className: string
   subjectId: string
   subjectName: string
+  subjectAbbreviation?: string
 }>>
 
 export type ClassSchedule = Record<Day, Array<{
@@ -55,7 +56,8 @@ export function calculateTeacherSchedules(
           classKey,
           className: formatClassName(classKey),
           subjectId: cell.subjectId,
-          subjectName: subject?.name || ''
+          subjectName: subject?.name || '',
+          subjectAbbreviation: subject?.abbreviation || ''
         }
       }
     }
@@ -70,9 +72,41 @@ export function formatClassName(classKey: string): string {
 }
 
 // Ders kısaltmaları (PDF'lerdeki gibi)
-export function getSubjectAbbreviation(subjectName: string): string {
+const SUBJECT_ABBR_MAP: Record<string, string> = {
+  'TÜRKÇE': 'TURKC',
+  'MATEMATİK': 'MAT',
+  'FEN BİLİMLERİ': 'FEN B',
+  'SOSYAL BİLGİLER': 'SOS',
+  'İNGİLİZCE': 'İNG',
+  'DİKAB': 'DİN',
+  'DİN KÜLTÜRÜ': 'DİN',
+  'GÖRSEL SANATLAR': 'GÖRSE',
+  'MÜZİK': 'MÜZ',
+  'BEDEN EĞİTİMİ': 'BED',
+  'BİLİŞİM TEKNOLOJİLERİ': 'BİL.T',
+  'TEKNOLOJİ VE TASARIM': 'TTAS',
+  'İNKILAP TARİHİ': 'İNK',
+  'REHBERLİK VE KARİYER PLANLAMA': 'REH',
+  'SEÇMELİ MASAL VE DESTANLAR': 'S.M.D',
+  'SEÇMELİ İNGİLİZCE': 'S.İNG',
+  'SEÇMELİ PEYGAMBERİMİZİN HAYATI': 'S.P.H',
+  'SEÇMELİ KMY': 'S.KMY',
+  'SEÇMELİ MEDYA OKURYAZARLIĞI': 'S.MED',
+  'SEÇMELİ SPOR VE FİZİKİ ETKİNLİKLER': 'S.SFE',
+  'ÖZEL EĞİTİM DİN KÜLTÜRÜ': 'ÖEDK',
+  'ÖZEL EĞİTİM BEDEN': 'ÖEBDN',
+  'ÖZEL EĞİTİM GÖRSEL SANATLAR': 'ÖEGS',
+  'ÖZEL EĞİTİM MÜZİK': 'ÖEM',
+}
+
+export function getSubjectAbbreviation(subjectName: string, preferredAbbr?: string): string {
+  if (preferredAbbr && preferredAbbr.trim()) {
+    return preferredAbbr.trim()
+  }
   const upper = subjectName.trim().toLocaleUpperCase('tr-TR')
   if (!upper) return ''
+
+  if (SUBJECT_ABBR_MAP[upper]) return SUBJECT_ABBR_MAP[upper]
 
   // Seçmeli dersler (önce kontrol et)
   if (upper.startsWith('S.') || upper.startsWith('SEÇMELİ')) {

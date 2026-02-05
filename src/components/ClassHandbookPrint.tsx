@@ -98,7 +98,7 @@ export default function ClassHandbookPrint({ tables, subjects, teachers, classes
 
                       return (
                         <td key={slotIndex} className="slot-cell">
-                          <span className="print-subject">{getSubjectAbbreviation(subject?.name || '')}</span>
+                          <span className="print-subject">{getSubjectAbbreviation(subject?.name || '', subject?.abbreviation)}</span>
                           {teacher && (
                             <span className="print-teacher">{getTeacherAbbreviation(teacher.name)}</span>
                           )}

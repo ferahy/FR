@@ -13,6 +13,7 @@ const SUBJECT_COLORS = [
 
 type FormState = {
   name: string
+  abbreviation: string
   weeklyHoursByGrade: Record<string, string>
   enabledByGrade: Record<string, boolean>
   perDayMax: string
@@ -69,6 +70,7 @@ export default function Dersler() {
   const onSave = (data: FormState) => {
     const normalized: Omit<Subject, 'id'> = {
       name: data.name.trim(),
+      abbreviation: data.abbreviation.trim() || undefined,
       weeklyHoursByGrade: Object.fromEntries(
         Object.entries(data.weeklyHoursByGrade).map(([k, v]) => [k, data.enabledByGrade[k] ? Math.max(1, toInt(v)) : 0])
       ),
@@ -274,6 +276,7 @@ function SubjectModal({
 }) {
   const buildState = (init?: Subject): FormState => ({
     name: init?.name ?? '',
+    abbreviation: init?.abbreviation ?? '',
     weeklyHoursByGrade: Object.fromEntries(grades.map((g) => [g, String(init?.weeklyHoursByGrade[g] ?? 0)])),
     enabledByGrade: Object.fromEntries(grades.map((g) => [g, (init?.weeklyHoursByGrade[g] ?? 0) > 0])),
     perDayMax: init?.rule?.perDayMax ? String(init.rule.perDayMax) : '0',
@@ -416,6 +419,16 @@ function SubjectModal({
             placeholder="örn. Matematik"
           />
           {errors.name && <span id="err-name" className="error-text">{errors.name}</span>}
+        </label>
+
+        <label className="field">
+          <span className="field-label">Kısaltma (opsiyonel)</span>
+          <input
+            className="input"
+            value={state.abbreviation}
+            onChange={(e) => setState((s) => ({ ...s, abbreviation: e.target.value }))}
+            placeholder="örn. MAT"
+          />
         </label>
 
         <div className="field">

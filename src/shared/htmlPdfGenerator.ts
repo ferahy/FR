@@ -6,11 +6,37 @@ type ClassSchedule = Record<Day, Array<{ subjectId?: string; teacherId?: string 
 const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
 const LESSON_TIMES = ['08:40', '09:35', '10:35', '11:30', '13:10', '14:05', '15:00']
 
-function getSubjectAbbr(name: string): string {
+function getSubjectAbbr(name: string, preferredAbbr?: string): string {
+  if (preferredAbbr && preferredAbbr.trim()) return preferredAbbr.trim()
   const upper = name.trim().toLocaleUpperCase('tr-TR')
   if (!upper) return ''
-
-  // Seçmeli dersler (önce kontrol et)
+  const map: Record<string, string> = {
+    'TÜRKÇE': 'TURKC',
+    'MATEMATİK': 'MAT',
+    'FEN BİLİMLERİ': 'FEN B',
+    'SOSYAL BİLGİLER': 'SOS',
+    'İNGİLİZCE': 'İNG',
+    'DİKAB': 'DİN',
+    'DİN KÜLTÜRÜ': 'DİN',
+    'GÖRSEL SANATLAR': 'GÖRSE',
+    'MÜZİK': 'MÜZ',
+    'BEDEN EĞİTİMİ': 'BED',
+    'BİLİŞİM TEKNOLOJİLERİ': 'BİL.T',
+    'TEKNOLOJİ VE TASARIM': 'TTAS',
+    'İNKILAP TARİHİ': 'İNK',
+    'REHBERLİK VE KARİYER PLANLAMA': 'REH',
+    'SEÇMELİ MASAL VE DESTANLAR': 'S.M.D',
+    'SEÇMELİ İNGİLİZCE': 'S.İNG',
+    'SEÇMELİ PEYGAMBERİMİZİN HAYATI': 'S.P.H',
+    'SEÇMELİ KMY': 'S.KMY',
+    'SEÇMELİ MEDYA OKURYAZARLIĞI': 'S.MED',
+    'SEÇMELİ SPOR VE FİZİKİ ETKİNLİKLER': 'S.SFE',
+    'ÖZEL EĞİTİM DİN KÜLTÜRÜ': 'ÖEDK',
+    'ÖZEL EĞİTİM BEDEN': 'ÖEBDN',
+    'ÖZEL EĞİTİM GÖRSEL SANATLAR': 'ÖEGS',
+    'ÖZEL EĞİTİM MÜZİK': 'ÖEM',
+  }
+  if (map[upper]) return map[upper]
   if (upper.startsWith('S.') || upper.startsWith('SEÇMELİ')) {
     if (upper.includes('İNGİLİZCE')) return 'S.İNG'
     if (upper.includes('MASAL')) return 'SMD'
@@ -23,8 +49,6 @@ function getSubjectAbbr(name: string): string {
     if (upper.includes('ÇEVRİ')) return 'S.ÇİD'
     if (upper.includes('MEDYA')) return 'MED'
   }
-
-  // Özel eğitim dersleri
   if (upper.startsWith('ÖE') || upper.includes('ÖZEL EĞİTİM')) {
     if (upper.includes('DİN') || upper.includes('KÜLT')) return 'ÖEDK'
     if (upper.includes('GÖRSEL')) return 'ÖEGS'
@@ -32,19 +56,15 @@ function getSubjectAbbr(name: string): string {
     if (upper.includes('MÜZ')) return 'ÖEM'
     return 'ÖE'
   }
-
-  // Normal dersler
   if (upper.includes('MATEMATİK')) return 'MAT'
   if (upper.includes('TÜRKÇE')) return 'TURKC'
   if (upper.includes('FEN')) return 'FEN B'
   if (upper.includes('İNGİLİZCE')) return 'İNG.'
   if (upper.includes('SOSYAL')) {
-    // SOS7 veya SOS B olabilir
     return upper.includes('7') ? 'SOS7' : 'SOS B'
   }
   if (upper.includes('DİN') || upper.includes('KÜLT')) return 'DİN'
   if (upper.includes('BEDEN')) {
-    // BED, BEDN veya BDN olabilir
     if (upper.includes('BEDN')) return 'BEDN'
     if (upper.includes('BDN')) return 'BDN'
     return 'BED'
@@ -63,8 +83,6 @@ function getSubjectAbbr(name: string): string {
   if (upper.includes('İNKILAP') || upper.includes('İNK')) {
     return upper.includes('8') ? 'İNK8' : 'İNK'
   }
-
-  // Varsayılan: ilk 6 karakter
   return upper.slice(0, 6)
 }
 
@@ -359,7 +377,7 @@ export function generateClassHandbookHTML(
             const subject = subjects.find(s => s.id === cell.subjectId)
             const teacher = teachers.find(t => t.id === cell.teacherId)
             return `<td class="lesson-col">
-              <div class="cell-subject">${subject ? getSubjectAbbr(subject.name) : '—'}</div>
+              <div class="cell-subject">${subject ? getSubjectAbbr(subject.name, subject.abbreviation) : '—'}</div>
               <div class="cell-teacher">${teacher ? getTeacherAbbr(teacher.name) : ''}</div>
             </td>`
           }).join('')}
@@ -453,7 +471,7 @@ export function generateTeacherHandbookHTML(
               if (!cell?.subjectId) return '<td class="lesson-col"></td>'
               return `<td class="lesson-col">
                 <div class="cell-class">${cell.className || ''}</div>
-                <div class="cell-subject">${getSubjectAbbr(cell.subjectName || '')}</div>
+                <div class="cell-subject">${getSubjectAbbr(cell.subjectName || '', cell.subjectAbbreviation)}</div>
               </td>`
             }).join('')}
           </tr>
@@ -818,7 +836,7 @@ export function generateClassSheetHTML(
                   return `
                     <td>
                       <div class="cell-content">
-                        <span class="cell-subject">${subject ? getSubjectAbbr(subject.name) : '—'}</span>
+                        <span class="cell-subject">${subject ? getSubjectAbbr(subject.name, subject.abbreviation) : '—'}</span>
                         ${teacher ? `<span class="cell-teacher">${getTeacherAbbr(teacher.name)}</span>` : ''}
                       </div>
                     </td>
@@ -1008,7 +1026,7 @@ export function generateTeacherSheetHTML(
                     <td>
                       <div class="cell-content">
                         <span class="cell-class">${cell.className || ''}</span>
-                        <span class="cell-subject">${cell.subjectName ? getSubjectAbbr(cell.subjectName) : ''}</span>
+                        <span class="cell-subject">${cell.subjectName ? getSubjectAbbr(cell.subjectName, cell.subjectAbbreviation) : ''}</span>
                       </div>
                     </td>
                   `

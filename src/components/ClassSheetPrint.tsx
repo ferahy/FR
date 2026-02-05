@@ -134,7 +134,7 @@ export default function ClassSheetPrint({ tables, subjects, teachers, classes, s
                         >
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '7pt' }}>
-                              {getSubjectAbbreviation(subject?.name || '')}
+                            {getSubjectAbbreviation(subject?.name || '', subject?.abbreviation)}
                             </span>
                             {teacher && (
                               <span style={{ fontSize: '6pt', opacity: 0.8 }}>

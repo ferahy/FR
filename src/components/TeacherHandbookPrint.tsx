@@ -94,7 +94,7 @@ export default function TeacherHandbookPrint({ tables, subjects, teachers, schoo
                       return (
                         <td key={slotIndex} className="slot-cell">
                           <span className="print-subject">{cell.className}</span>
-                          <span className="print-teacher">{getSubjectAbbreviation(cell.subjectName)}</span>
+                          <span className="print-teacher">{getSubjectAbbreviation(cell.subjectName, cell.subjectAbbreviation)}</span>
                         </td>
                       )
                     })}

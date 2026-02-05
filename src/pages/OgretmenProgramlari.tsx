@@ -4,7 +4,7 @@ import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
 import type { Day } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
-import { calculateTeacherSchedules, formatClassName, formatTimeSlot } from '../shared/pdfUtils'
+import { calculateTeacherSchedules, formatClassName, formatTimeSlot, getSubjectAbbreviation } from '../shared/pdfUtils'
 import { generateTeacherHandbookHTML, generateTeacherSheetHTML } from '../shared/htmlPdfGenerator'
 
 const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
@@ -102,7 +102,7 @@ export default function OgretmenProgramlari() {
       <div className="topbar glass p-6" style={{ justifyContent: 'space-between', gap: 12 }}>
         <div className="brand">
           <div className="title">Öğretmen Programları</div>
-          <div className="subtitle">Öğretmen bazlı ders programları</div>
+          {/* <div className="subtitle">Öğretmen bazlı ders programları</div>  */}
         </div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-outline" onClick={handlePrintHandbooks} disabled={!hasTables}>📄 Öğretmen El PDF</button>
@@ -165,6 +165,7 @@ export default function OgretmenProgramlari() {
                                 }
 
                                 const subject = subjects.find(s => s.id === cell.subjectId)
+                                const abbr = getSubjectAbbreviation(cell.subjectName, subject?.abbreviation || cell.subjectAbbreviation)
 
                                 return (
                                   <td key={teacher.id + d + si} className="slot">
@@ -174,7 +175,7 @@ export default function OgretmenProgramlari() {
                                     >
                                       <span className="dot" style={{ background: subject?.color ?? '#93c5fd' }} />
                                       <span className="s-name">{formatClassName(cell.classKey)}</span>
-                                      <span className="s-teacher">{cell.subjectName}</span>
+                                      <span className="s-teacher">{abbr}</span>
                                     </div>
                                   </td>
                                 )
@@ -193,6 +194,7 @@ export default function OgretmenProgramlari() {
                               {slots.map((_, si) => {
                                 const cell = schedule[d]?.[si]
                                 const subject = subjects.find(s => s.id === cell?.subjectId)
+                                const abbr = cell ? getSubjectAbbreviation(cell.subjectName, subject?.abbreviation || cell.subjectAbbreviation) : ''
 
                                 return (
                                   <div key={teacher.id + d + 'a' + si} className="acc-slot">
@@ -201,7 +203,7 @@ export default function OgretmenProgramlari() {
                                       <div className="acc-slot-main">
                                         <span className="dot" style={{ background: subject?.color ?? '#93c5fd' }} />
                                         <span className="s-name">{formatClassName(cell.classKey)}</span>
-                                        <span className="s-teacher">{cell.subjectName}</span>
+                                        <span className="s-teacher">{abbr}</span>
                                       </div>
                                     ) : (
                                       <div className="acc-slot-empty muted">—</div>

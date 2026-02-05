@@ -98,217 +98,482 @@ export default function DersProgramlari() {
   }
 
   const generate = () => {
-    const result: Record<ClassKey, Record<Day, Cell[]>> = {}
+    // Global state - tüm sınıflar için ortak
     const teacherLoad = new Map<string, number>()
-    const teacherOccupied = new Map<string, Set<string>>() // Track teacher availability: teacherId -> Set of "day-slot" strings
+    const teacherOccupied = new Map<string, Set<string>>() // teacherId -> Set("day-slot")
+
+    // Her sınıf için tablo ve yardımcı veriler
+    const workingTables: Record<ClassKey, Record<Day, Cell[]>> = {}
+    const classSubjectTeacher: Record<ClassKey, Record<string, string>> = {} // class -> subject -> teacher
+    const placedDays: Record<ClassKey, Record<string, Set<Day>>> = {} // class -> subject -> days
+    const classGradeMap = new Map<string, string>(classes.map(c => [c.key, c.grade]))
+
+    // Tabloları başlat
+    for (const c of classes) {
+      workingTables[c.key] = Object.fromEntries(
+        DAYS.map(d => [d, Array.from({ length: slots.length }, () => ({}) as Cell)])
+      ) as Record<Day, Cell[]>
+      classSubjectTeacher[c.key] = {}
+      placedDays[c.key] = {}
+    }
+
+    // Helper fonksiyonlar
+    const isFree = (classKey: ClassKey, day: Day, si: number) =>
+      !workingTables[classKey][day][si]?.subjectId
+
+    const daySubjCount = (classKey: ClassKey, day: Day, subjId: string): number =>
+      workingTables[classKey][day].filter(cell => cell.subjectId === subjId).length
+
+    const placeCell = (classKey: ClassKey, day: Day, si: number, subjId: string, teacherId: string) => {
+      workingTables[classKey][day][si] = { subjectId: subjId, teacherId }
+      teacherLoad.set(teacherId, (teacherLoad.get(teacherId) ?? 0) + 1)
+      if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
+      teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
+      if (!placedDays[classKey][subjId]) placedDays[classKey][subjId] = new Set<Day>()
+      placedDays[classKey][subjId].add(day)
+      if (!classSubjectTeacher[classKey][subjId]) classSubjectTeacher[classKey][subjId] = teacherId
+    }
+
+    const findTeacherForSlot = (
+      classKey: ClassKey,
+      subjId: string,
+      gradeId: string,
+      day: Day,
+      si: number,
+      tryLocked = true
+    ): string | undefined => {
+      const locked = classSubjectTeacher[classKey][subjId]
+      if (tryLocked && locked) {
+        return pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, {
+          commit: false, requiredTeacherId: locked, occupied: teacherOccupied
+        })
+      }
+      return pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, {
+        commit: false, occupied: teacherOccupied
+      })
+    }
+
+    const eligibleTeacherCount = (subjId: string, gradeId: string): number => {
+      return teachers.filter(t => {
+        const subs = getTeacherSubjectIds(t)
+        if (!subs.includes(subjId)) return false
+        const subjPref = t.preferredGradesBySubject?.[subjId]
+        const prefGrades = (subjPref && subjPref.length ? subjPref : t.preferredGrades) ?? []
+        if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
+        return true
+      }).length
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // TÜM DERSLERİ GLOBAL BİR HAVUZDA TOPLA
+    // ═══════════════════════════════════════════════════════════════
+    type GlobalLesson = {
+      classKey: ClassKey
+      gradeId: string
+      subjId: string
+      isBlock: boolean // Beden eğitimi bloğu mu?
+    }
+
+    const allLessons: GlobalLesson[] = []
 
     for (const c of classes) {
       const gradeId = c.grade
-      const table: Record<Day, Cell[]> = Object.fromEntries(DAYS.map(d => [d, Array.from({ length: slots.length }, () => ({}) as Cell)])) as any
-      const placedDays: Record<string, Set<Day>> = {}
-      const classSubjectTeacher: Record<string, string> = {} // Track teacher per subject for this class
-
-      // Build subject demand map
-      const subjectDemand: Record<string, number> = {}
       for (const s of subjects) {
         const count = s.weeklyHoursByGrade[gradeId] ?? 0
-        if (count > 0) subjectDemand[s.id] = count
-      }
-
-      // PHASE 1: Place block subjects STRICTLY as blocks (same day, contiguous)
-      for (const [subjId, count] of Object.entries(subjectDemand)) {
-        const subject = subjects.find(s => s.id === subjId)
-        if (!subject) continue
-        if (!shouldBlockSubject(subject, gradeId)) continue
-
-        const blocksNeeded = Math.floor(count / 2)
-        const singleNeeded = count % 2
-
-        let blocksPlaced = 0
-        // Try to place all blocks for this subject
-        for (let di = 0; di < DAYS.length && blocksPlaced < blocksNeeded; di++) {
-          const day = DAYS[di]
-          let perDayCount = 0
-
-          for (let si = 0; si < slots.length - 1 && blocksPlaced < blocksNeeded; si++) {
-            // Check if both slots are free
-            if (table[day][si]?.subjectId || table[day][si + 1]?.subjectId) continue
-
-            // Check avoid slots
-            const slot1Avoided = subject.rule?.avoidSlots?.includes(`S${si + 1}`)
-            const slot2Avoided = subject.rule?.avoidSlots?.includes(`S${si + 2}`)
-            if (slot1Avoided || slot2Avoided) continue
-
-            // Check perDayMax
-            const perDayMax = subject.rule?.perDayMax ?? 0
-            if (perDayMax > 0 && perDayCount + 2 > perDayMax) continue
-
-            // Find teacher available for both slots (use assigned teacher if exists)
-            let teacherId: string | undefined
-            if (classSubjectTeacher[subjId]) {
-              // Use the already-assigned teacher for this subject
-              teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, requiredTeacherId: classSubjectTeacher[subjId], occupied: teacherOccupied })
-              if (!teacherId) continue
-              const teacherId2 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, { commit: false, requiredTeacherId: classSubjectTeacher[subjId], occupied: teacherOccupied })
-              if (teacherId !== teacherId2) continue
-            } else {
-              // Pick any available teacher for both slots
-              const teacherId1 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, occupied: teacherOccupied })
-              if (!teacherId1) continue
-              const teacherId2 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, { commit: false, occupied: teacherOccupied })
-              if (teacherId1 !== teacherId2) continue
-              teacherId = teacherId1
-              // Record the teacher assignment for this class-subject pair
-              classSubjectTeacher[subjId] = teacherId
-            }
-
-            // Place block!
-            table[day][si] = { subjectId: subjId, teacherId }
-            table[day][si + 1] = { subjectId: subjId, teacherId }
-            teacherLoad.set(teacherId, (teacherLoad.get(teacherId) ?? 0) + 2)
-            // Mark teacher as occupied for both slots
-            if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
-            teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
-            teacherOccupied.get(teacherId)!.add(`${day}-${si + 1}`)
-            if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
-            placedDays[subjId].add(day)
-
-            blocksPlaced++
-            perDayCount += 2
-            subjectDemand[subjId] -= 2
-            si++ // Skip next slot
-          }
-        }
-
-        // Place single remaining lesson if odd count
-        if (singleNeeded === 1 && subjectDemand[subjId] > 0) {
-          let placed = false
-          for (let di = 0; di < DAYS.length && !placed; di++) {
-            const day = DAYS[di]
-            for (let si = 0; si < slots.length && !placed; si++) {
-              if (table[day][si]?.subjectId) continue
-
-              const slotAvoided = subject.rule?.avoidSlots?.includes(`S${si + 1}`)
-              if (slotAvoided) continue
-
-              // Use assigned teacher if exists, otherwise pick and record
-              let teacherId: string | undefined
-              if (classSubjectTeacher[subjId]) {
-                teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, requiredTeacherId: classSubjectTeacher[subjId], occupied: teacherOccupied })
-              } else {
-                teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, occupied: teacherOccupied })
-                if (teacherId) {
-                  classSubjectTeacher[subjId] = teacherId
-                }
-              }
-              if (!teacherId) continue
-
-              table[day][si] = { subjectId: subjId, teacherId }
-              teacherLoad.set(teacherId, (teacherLoad.get(teacherId) ?? 0) + 1)
-              // Mark teacher as occupied
-              if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
-              teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
-              if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
-              placedDays[subjId].add(day)
-              subjectDemand[subjId]--
-              placed = true
-            }
-          }
-        }
-      }
-
-      // PHASE 2: Place regular (non-block) subjects
-      const pool: string[] = []
-      for (const [subjId, count] of Object.entries(subjectDemand)) {
         if (count <= 0) continue
-        const subject = subjects.find(s => s.id === subjId)
-        if (!subject) continue
-        const blockSubject = shouldBlockSubject(subject, gradeId)
-        if (blockSubject) continue // Blok dersler bu fazda dağılmasın
-        for (let i = 0; i < count; i++) {
-          pool.push(subjId)
+
+        const prefersBlocks = prefersBlock(s, gradeId)
+        const isBed = isMandatoryBlock(s, gradeId)
+        // Ders saatini 2-2-1 gibi blok ve tekliye böl
+        const blocks = prefersBlocks ? Math.floor(count / 2) : (isBed ? Math.floor(count / 2) : 0)
+        const singles = count - blocks * 2
+        for (let i = 0; i < blocks; i++) {
+          allLessons.push({ classKey: c.key, gradeId, subjId: s.id, isBlock: true })
+        }
+        for (let i = 0; i < singles; i++) {
+          allLessons.push({ classKey: c.key, gradeId, subjId: s.id, isBlock: false })
         }
       }
-      shuffle(pool)
+    }
 
-      // Place regular subjects slot by slot
-      for (let di = 0; di < DAYS.length; di++) {
-        const day = DAYS[di]
-        let perDayCount: Record<string, number> = {}
+    // ═══════════════════════════════════════════════════════════════
+    // ÖNCELİK SIRALA: En kısıtlı dersler önce
+    // ═══════════════════════════════════════════════════════════════
+    allLessons.sort((a, b) => {
+      // 1. Bloklar önce (2 slot birden lazım, daha kısıtlı)
+      if (a.isBlock !== b.isBlock) return a.isBlock ? -1 : 1
+      // 2. Çok saatli dersler önce (daha fazla yerleştirilecek)
+      const ha = subjects.find(s => s.id === a.subjId)?.weeklyHoursByGrade[a.gradeId] ?? 0
+      const hb = subjects.find(s => s.id === b.subjId)?.weeklyHoursByGrade[b.gradeId] ?? 0
+      if (ha !== hb) return hb - ha
+      // 3. Az öğretmeni olan dersler önce
+      const ea = eligibleTeacherCount(a.subjId, a.gradeId)
+      const eb = eligibleTeacherCount(b.subjId, b.gradeId)
+      return ea - eb
+    })
 
-        for (let si = 0; si < slots.length; si++) {
-          if (table[day][si]?.subjectId) continue // Skip filled slots
+    // ═══════════════════════════════════════════════════════════════
+    // PHASE 1: Tüm dersleri yerleştir (yumuşak kısıtlarla)
+    // ═══════════════════════════════════════════════════════════════
+    const unplaced: GlobalLesson[] = []
 
-          let pickedIndex = -1
-          let pickedTeacher: string | undefined
-          for (let i = 0; i < pool.length; i++) {
-            const subjId = pool[i]
-            if (!subjId) continue
+    for (const lesson of allLessons) {
+      const { classKey, gradeId, subjId, isBlock } = lesson
+      const subject = subjects.find(s => s.id === subjId)!
+      const rule = subject.rule
 
-            const subject = subjects.find(s => s.id === subjId)
-            const rule = subject?.rule
+      type Candidate = { day: Day; si: number; teacherId: string; score: number }
+      const candidates: Candidate[] = []
 
-            // Check avoid slots
-            if (rule?.avoidSlots?.includes(`S${si + 1}`)) continue
+      for (const day of DAYS) {
+        const currentDayCount = daySubjCount(classKey, day, subjId)
+        const perDayMax = rule?.perDayMax ?? 2
 
-            // Check perDayMax
-            const perDayMax = rule?.perDayMax ?? 0
-            if (perDayMax > 0 && (perDayCount[subjId] ?? 0) >= perDayMax) continue
+        const slotsToCheck = isBlock ? slots.length - 1 : slots.length
+        for (let si = 0; si < slotsToCheck; si++) {
+          // Slot boş mu?
+          if (!isFree(classKey, day, si)) continue
+          if (isBlock && !isFree(classKey, day, si + 1)) continue
 
-            // Check maxConsecutive
-            const maxConsec = rule?.maxConsecutive ?? 0
+          // Avoid slots kontrolü
+          if (rule?.avoidSlots?.includes(`S${si + 1}`)) continue
+          if (isBlock && rule?.avoidSlots?.includes(`S${si + 2}`)) continue
+
+          // Günlük max kontrolü
+          const adding = isBlock ? 2 : 1
+          if (perDayMax > 0 && currentDayCount + adding > perDayMax) continue
+
+          // minDays: farklı günlere yayılmayı zorla
+          const minDays = rule?.minDays ?? 0
+          if (!isBlock && minDays > 0) {
+            const placedUnique = placedDays[classKey][subjId]?.size ?? 0
+            const alreadyThisDay = placedDays[classKey][subjId]?.has(day)
+            if (!alreadyThisDay && placedUnique < minDays - 1 && currentDayCount > 0) continue
+          }
+
+          // maxConsecutive kontrolü (blok için skip)
+          if (!isBlock) {
+            const maxConsec = rule?.maxConsecutive ?? 2
             if (maxConsec > 0) {
-              const prev = table[day][si - 1]?.subjectId
-              const prev2 = table[day][si - 2]?.subjectId
-              const prev3 = table[day][si - 3]?.subjectId
-              const consec = [prev, prev2, prev3].reduce((acc, v) => (v === subjId ? acc + 1 : acc), 0)
-              if (consec >= maxConsec) continue
+              let backward = 0
+              for (let k = si - 1; k >= 0 && workingTables[classKey][day][k]?.subjectId === subjId; k--) backward++
+              let forward = 0
+              for (let k = si + 1; k < slots.length && workingTables[classKey][day][k]?.subjectId === subjId; k++) forward++
+              if (backward + 1 + forward > maxConsec) continue
             }
 
-            // Check minDays
-            const minDays = rule?.minDays ?? 0
-            if (minDays > 0) {
-              const placed = placedDays[subjId] ?? new Set<Day>()
-              const futureDays = DAYS.length - di - 1
-              if (placed.has(day) && placed.size < minDays && futureDays < (minDays - placed.size)) {
-                continue
-              }
+            // Aynı gün iki ders varsa bitişik olmalı
+            const sameDaySlots = workingTables[classKey][day]
+              .map((c, idx) => (c.subjectId === subjId ? idx : -1))
+              .filter(idx => idx >= 0)
+            if (sameDaySlots.length > 0) {
+              const isAdjacent = sameDaySlots.some(idx => Math.abs(idx - si) === 1)
+              if (!isAdjacent) continue
             }
+          }
 
-            // Use assigned teacher if exists, otherwise pick and record
-            let teacherId: string | undefined
-            if (classSubjectTeacher[subjId]) {
-              teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, requiredTeacherId: classSubjectTeacher[subjId], occupied: teacherOccupied })
-            } else {
-              teacherId = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si, { commit: false, occupied: teacherOccupied })
-              if (teacherId) {
-                classSubjectTeacher[subjId] = teacherId
-              }
-            }
-            if (!teacherId) continue
+          // Öğretmen bul
+          let teacherId: string | undefined
+          if (isBlock) {
+            const t1 = findTeacherForSlot(classKey, subjId, gradeId, day, si)
+            if (!t1) continue
+            const t2 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, {
+              commit: false, requiredTeacherId: t1, occupied: teacherOccupied
+            })
+            if (t1 !== t2) continue
+            teacherId = t1
+          } else {
+            teacherId = findTeacherForSlot(classKey, subjId, gradeId, day, si)
+          }
+          if (!teacherId) continue
 
-            pickedIndex = i
-            pickedTeacher = teacherId
+          // Skor hesapla
+          let score = 0
+          // Yayılma bonusu (farklı günlere dağıt)
+          if (!placedDays[classKey][subjId]?.has(day)) score += 50
+          // Bitişiklik bonusu
+          if (!isBlock) {
+            if (si > 0 && workingTables[classKey][day][si - 1]?.subjectId === subjId) score += 30
+            if (si + 1 < slots.length && workingTables[classKey][day][si + 1]?.subjectId === subjId) score += 30
+          }
+          // Ana dersleri sabaha koy
+          const isMain = ['TÜRKÇE', 'MATEMATİK', 'FEN', 'SOSYAL', 'İNGİLİZCE'].some(
+            n => subject.name.toLocaleUpperCase('tr-TR').includes(n)
+          )
+          if (isMain && si < 4) score += 15
+
+          candidates.push({ day, si, teacherId, score })
+        }
+      }
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.score - a.score)
+        const best = candidates[0]
+        placeCell(classKey, best.day, best.si, subjId, best.teacherId)
+        if (isBlock) {
+          placeCell(classKey, best.day, best.si + 1, subjId, best.teacherId)
+        }
+      } else {
+        unplaced.push(lesson)
+      }
+    }
+
+    const canPlaceWithRules = (
+      classKey: ClassKey,
+      day: Day,
+      si: number,
+      subjId: string,
+      isBlock: boolean
+    ) => {
+      const subject = subjects.find(s => s.id === subjId)
+      const rule = subject?.rule
+      const addCount = isBlock ? 2 : 1
+
+      const currentDayCount = daySubjCount(classKey, day, subjId)
+      const perDayMax = rule?.perDayMax ?? 0
+      if (perDayMax > 0 && currentDayCount + addCount > perDayMax) return false
+
+      // minDays: aynı güne yığılmayı engelle
+      const minDays = rule?.minDays ?? 0
+      if (minDays > 0) {
+        const placedUnique = placedDays[classKey][subjId]?.size ?? 0
+        const alreadyThisDay = placedDays[classKey][subjId]?.has(day)
+        if (!alreadyThisDay && placedUnique < minDays - 1 && currentDayCount > 0) {
+          // minDays sağlanana kadar aynı güne ikinci dersi koyma
+          return false
+        }
+      }
+
+      // maxConsecutive / aynı gün 2 dersse bitişik olmalı
+      if (!isBlock) {
+        const maxConsec = rule?.maxConsecutive ?? 0
+        if (maxConsec > 0) {
+          let backward = 0
+          for (let k = si - 1; k >= 0 && workingTables[classKey][day][k]?.subjectId === subjId; k--) backward++
+          let forward = 0
+          for (let k = si + 1; k < slots.length && workingTables[classKey][day][k]?.subjectId === subjId; k++) forward++
+          if (backward + 1 + forward > maxConsec) return false
+        }
+
+        const sameDaySlots = workingTables[classKey][day]
+          .map((c, idx) => (c.subjectId === subjId ? idx : -1))
+          .filter(idx => idx >= 0)
+        if (sameDaySlots.length > 0) {
+          const isAdjacent = sameDaySlots.some(idx => Math.abs(idx - si) === 1)
+          if (!isAdjacent) return false
+        }
+      }
+
+      // avoidSlots kontrolü
+      const slotLabel = `S${si + 1}`
+      if (rule?.avoidSlots?.includes(slotLabel)) return false
+      if (isBlock && rule?.avoidSlots?.includes(`S${si + 2}`)) return false
+
+      return true
+    }
+
+    const recomputeSubjectDays = (classKey: ClassKey, subjId: string) => {
+      const days = new Set<Day>()
+      for (const d of DAYS) {
+        if (workingTables[classKey][d].some(c => c.subjectId === subjId)) days.add(d)
+      }
+      placedDays[classKey][subjId] = days
+    }
+
+    const tryRelocateSingle = (classKey: ClassKey, day: Day, si: number): boolean => {
+      const current = workingTables[classKey][day][si]
+      if (!current?.subjectId || !current.teacherId) return false
+      const subjId = current.subjectId
+      const teacherId = current.teacherId
+      // Blok dersin parçasına dokunma
+      const sameDay = workingTables[classKey][day]
+      if (si + 1 < sameDay.length && sameDay[si + 1]?.subjectId === subjId && sameDay[si + 1]?.teacherId === teacherId) return false
+      if (si - 1 >= 0 && sameDay[si - 1]?.subjectId === subjId && sameDay[si - 1]?.teacherId === teacherId) return false
+
+      const teacher = teachers.find(t => t.id === teacherId)
+
+      for (const d2 of DAYS) {
+        for (let s2 = 0; s2 < slots.length; s2++) {
+          if (d2 === day && s2 === si) continue
+          if (!isFree(classKey, d2, s2)) continue
+          if (!canPlaceWithRules(classKey, d2, s2, subjId, false)) continue
+
+          const occKey = `${d2}-${s2}`
+          if (teacherOccupied.get(teacherId)?.has(occKey)) continue
+          const blocked = teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)
+          if (blocked) continue
+
+          // move
+          workingTables[classKey][d2][s2] = current
+          workingTables[classKey][day][si] = {}
+          teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
+          if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
+          teacherOccupied.get(teacherId)!.add(occKey)
+          recomputeSubjectDays(classKey, subjId)
+          return true
+        }
+      }
+      return false
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // PHASE 2: Yerleşemeyenler için kısıtları gevşet
+    // ═══════════════════════════════════════════════════════════════
+    const stillUnplaced: GlobalLesson[] = []
+
+    for (const lesson of unplaced) {
+      const { classKey, subjId, isBlock } = lesson
+      let placed = false
+      const gradeId = classGradeMap.get(classKey) ?? ''
+
+      // Blok dersi önce blok olarak, kısıtları esneterek dene
+      if (isBlock && !placed) {
+        const subj = subjects.find(s => s.id === subjId)
+        const rule = subj?.rule
+        for (const day of DAYS) {
+          if (placed) break
+          for (let si = 0; si < slots.length - 1; si++) {
+            if (!isFree(classKey, day, si) || !isFree(classKey, day, si + 1)) continue
+            if (rule?.avoidSlots?.includes(`S${si + 1}`)) continue
+            if (rule?.avoidSlots?.includes(`S${si + 2}`)) continue
+            const t1 = findTeacherForSlot(classKey, subjId, gradeId, day, si)
+            if (!t1) continue
+            const t2 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, {
+              commit: false, requiredTeacherId: t1, occupied: teacherOccupied
+            })
+            if (t1 !== t2 || !t2) continue
+            placeCell(classKey, day, si, subjId, t1)
+            placeCell(classKey, day, si + 1, subjId, t1)
+            placed = true
             break
           }
-
-          if (pickedIndex === -1 || !pickedTeacher) continue
-
-          const subjId = pool.splice(pickedIndex, 1)[0]
-          table[day][si] = { subjectId: subjId, teacherId: pickedTeacher }
-          perDayCount[subjId] = (perDayCount[subjId] ?? 0) + 1
-          teacherLoad.set(pickedTeacher, (teacherLoad.get(pickedTeacher) ?? 0) + 1)
-          // Mark teacher as occupied
-          if (!teacherOccupied.has(pickedTeacher)) teacherOccupied.set(pickedTeacher, new Set())
-          teacherOccupied.get(pickedTeacher)!.add(`${day}-${si}`)
-          if (!placedDays[subjId]) placedDays[subjId] = new Set<Day>()
-          placedDays[subjId].add(day)
         }
       }
 
-      result[c.key] = table
+      // Blokları tekli olarak dene (kurallara uyarak)
+      if (isBlock && !placed) {
+        let placedCount = 0
+        for (let needed = 0; needed < 2 && !placed; needed++) {
+          for (const day of DAYS) {
+            if (placedCount >= 2) break
+            for (let si = 0; si < slots.length; si++) {
+              if (!isFree(classKey, day, si)) continue
+              if (!canPlaceWithRules(classKey, day, si, subjId, false)) continue
+              const teacherId = findTeacherForSlot(classKey, subjId, gradeId, day, si, false)
+              if (!teacherId) continue
+              placeCell(classKey, day, si, subjId, teacherId)
+              placedCount++
+              if (placedCount >= 2) { placed = true; break }
+              break
+            }
+          }
+        }
+        if (!placed && placedCount < 2) {
+          for (let i = placedCount; i < 2; i++) {
+            stillUnplaced.push({ ...lesson, isBlock: false })
+          }
+        }
+      } else {
+        // Tek ders - herhangi bir boş slota koy
+        for (const day of DAYS) {
+          if (placed) break
+          for (let si = 0; si < slots.length; si++) {
+            if (!isFree(classKey, day, si)) continue
+            if (!canPlaceWithRules(classKey, day, si, subjId, false)) continue
+            let teacherId = findTeacherForSlot(classKey, subjId, gradeId, day, si, true)
+            if (!teacherId) teacherId = findTeacherForSlot(classKey, subjId, gradeId, day, si, false)
+            if (!teacherId) continue
+            placeCell(classKey, day, si, subjId, teacherId)
+            placed = true
+            break
+          }
+        }
+        if (!placed) stillUnplaced.push(lesson)
+      }
     }
-    setTables(result)
+
+    // ═══════════════════════════════════════════════════════════════
+    // PHASE 3: Son çare - kuralları gevşetmeden son deneme
+    // ═══════════════════════════════════════════════════════════════
+    const finalUnplaced: GlobalLesson[] = []
+    for (const lesson of stillUnplaced) {
+      const { classKey, subjId } = lesson
+      let placedHere = false
+
+      // Herhangi bir boş slot, herhangi bir öğretmen (hala kurallara uy)
+      for (const day of DAYS) {
+        if (placedHere) break
+        for (let si = 0; si < slots.length; si++) {
+          if (!isFree(classKey, day, si)) continue
+          if (!canPlaceWithRules(classKey, day, si, subjId, false)) continue
+
+          const eligibleTeachers = teachers.filter(t => {
+            const subs = getTeacherSubjectIds(t)
+            if (!subs.includes(subjId)) return false
+            const slotKey = `${day}-${si}`
+            if (teacherOccupied.get(t.id)?.has(slotKey)) return false
+            const blocked = t.unavailable?.[day]?.includes(`S${si + 1}`)
+            if (blocked) return false
+            return true
+          })
+
+          if (eligibleTeachers.length > 0) {
+            eligibleTeachers.sort((a, b) => (teacherLoad.get(a.id) ?? 0) - (teacherLoad.get(b.id) ?? 0))
+            const teacherId = eligibleTeachers[0].id
+            placeCell(classKey, day, si, subjId, teacherId)
+            placedHere = true
+            break
+          }
+        }
+      }
+
+      if (!placedHere) finalUnplaced.push(lesson)
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // PHASE 4: Full relax - kuralları esnet, boş kalmasın
+    // ═══════════════════════════════════════════════════════════════
+    for (const lesson of finalUnplaced) {
+      const { classKey, subjId, isBlock } = lesson
+      let placedHere = false
+
+      for (const day of DAYS) {
+        if (placedHere) break
+        const slotsToCheck = isBlock ? slots.length - 1 : slots.length
+        for (let si = 0; si < slotsToCheck; si++) {
+          let slotFree = isFree(classKey, day, si)
+          let slot2Free = !isBlock || isFree(classKey, day, si + 1)
+
+          // Mümkünse mevcut dersi kaydırarak boşluk aç
+          if (!slotFree) slotFree = tryRelocateSingle(classKey, day, si)
+          if (isBlock && !slot2Free) slot2Free = tryRelocateSingle(classKey, day, si + 1)
+          if (!slotFree || (isBlock && !slot2Free)) continue
+
+          const eligibleTeachers = teachers.filter(t => {
+            const subs = getTeacherSubjectIds(t)
+            if (!subs.includes(subjId)) return false
+            const slotKey1 = `${day}-${si}`
+            const slotKey2 = `${day}-${si + 1}`
+            if (teacherOccupied.get(t.id)?.has(slotKey1)) return false
+            if (isBlock && teacherOccupied.get(t.id)?.has(slotKey2)) return false
+            const blocked1 = t.unavailable?.[day]?.includes(`S${si + 1}`)
+            const blocked2 = isBlock ? t.unavailable?.[day]?.includes(`S${si + 2}`) : false
+            if (blocked1 || blocked2) return false
+            return true
+          })
+
+          if (!eligibleTeachers.length) continue
+          eligibleTeachers.sort((a, b) => (teacherLoad.get(a.id) ?? 0) - (teacherLoad.get(b.id) ?? 0))
+          const teacherId = eligibleTeachers[0].id
+          placeCell(classKey, day, si, subjId, teacherId)
+          if (isBlock) placeCell(classKey, day, si + 1, subjId, teacherId)
+          placedHere = true
+          break
+        }
+      }
+    }
+
+    setTables(workingTables)
   }
 
   const classesToShow = useMemo(() => classes.filter(c => gradeFilter === 'all' ? true : c.grade === gradeFilter), [classes, gradeFilter])
@@ -386,7 +651,7 @@ export default function DersProgramlari() {
                                   {cell?.subjectId ? (
                                     <div className="slot-pill" title={`${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}`}>
                                       <span className="dot" style={{ background: subj?.color ?? '#93c5fd' }} />
-                                      <span className="s-name">{getSubjectAbbreviation(subj?.name || '')}</span>
+                                      <span className="s-name">{getSubjectAbbreviation(subj?.name || '', subj?.abbreviation)}</span>
                                       <span className="s-teacher">{teacher ? getTeacherAbbreviation(teacher.name) : '—'}</span>
                                     </div>
                                   ) : (
@@ -515,7 +780,7 @@ export default function DersProgramlari() {
                             <td key={c.key + d + si} className="sheet-slot">
                               <div className="sheet-pill" title={`${subj?.name || ''} ${teacher?.name ? '— ' + teacher.name : ''}`}>
                                 <div className="sheet-text">
-                                  <div className="sheet-subj">{getSubjectAbbreviation(subj?.name || '')}</div>
+                                  <div className="sheet-subj">{getSubjectAbbreviation(subj?.name || '', subj?.abbreviation)}</div>
                                   {teacher?.name && <div className="sheet-teacher">{getTeacherAbbreviation(teacher.name)}</div>}
                                 </div>
                               </div>
@@ -544,11 +809,19 @@ function buildClasses(school: ReturnType<typeof useSchool>): { key: ClassKey; gr
   return out
 }
 
-function shouldBlockSubject(subject: ReturnType<typeof useSubjects>['subjects'][number], gradeId: string): boolean {
+function isMandatoryBlock(subject: ReturnType<typeof useSubjects>['subjects'][number], gradeId: string): boolean {
   const hours = subject.weeklyHoursByGrade[gradeId] ?? 0
-  // Varsayılan: haftalık 2 saatlik dersler ve blok tercihi açık olanlar aynı gün blok yerleştirilsin
-  const prefersBlock = subject.rule?.preferBlockScheduling ?? true
-  return prefersBlock && hours === 2
+  if (hours < 2) return false
+  // Sadece Beden Eğitimi kesin blok olmalı
+  const name = subject.name.toLocaleUpperCase('tr-TR')
+  return name.includes('BEDEN')
+}
+
+function prefersBlock(subject: ReturnType<typeof useSubjects>['subjects'][number], gradeId: string): boolean {
+  const hours = subject.weeklyHoursByGrade[gradeId] ?? 0
+  if (hours < 2) return false
+  // Blok tercih eden dersler (zorunlu değil, mümkünse)
+  return subject.rule?.preferBlockScheduling ?? false
 }
 
 function calculateDeficits(
@@ -618,7 +891,9 @@ function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: 
     return true
   })
   if (choices.length === 0) return undefined
-  const pick = choices[Math.floor(Math.random() * choices.length)]
+  // Prefer least-loaded teacher for balanced distribution
+  choices.sort((a, b) => (load.get(a.id) ?? 0) - (load.get(b.id) ?? 0))
+  const pick = choices[0]
   if (commit) {
     load.set(pick.id, (load.get(pick.id) ?? 0) + 1)
     // Mark teacher as occupied at this time slot
@@ -628,15 +903,6 @@ function pickTeacher(teachers: Teacher[], load: Map<string, number>, subjectId: 
     }
   }
   return pick.id
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
 }
 
 // shortName removed (show full name under subject)

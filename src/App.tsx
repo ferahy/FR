@@ -35,7 +35,7 @@ export default function App() {
     }
   }, [authed])
 
-  const [showKante, setShowKante] = useState(true)
+  const [showKante, setShowKante] = useState(false)
 
   if (!authed) {
     return <LoginScreen onSuccess={() => setAuthed(true)} />
