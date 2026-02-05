@@ -409,6 +409,84 @@ export function generateTeacherHandbookHTML(
     })
   })
 
+  const halfContent = `
+    <div class="half">
+      <div class="header">
+        <div>T.C.</div>
+        <div>FİNİKE KAYMAKAMLIĞI</div>
+        <div>${schoolNameSafe}</div>
+      </div>
+
+      <div class="info-block">
+        <div class="info-left">
+          <div><strong>Sayın</strong>&nbsp;&nbsp;: <strong>${teacher.name.toLocaleUpperCase('tr-TR')}</strong></div>
+          <div><strong>Konu</strong>&nbsp;&nbsp;: <strong>Haftalık Ders Programı</strong></div>
+        </div>
+        <div class="info-date">${today}</div>
+      </div>
+
+      <div class="message-block">
+        <div class="message">
+          <p>2025 - 2026 Öğretim Yılında ${today} tarihinden itibaren uygulanacak programda haftalık ders dağılımınız</p>
+          <p>ve nöbet göreviniz aşağıya çıkartılmıştır.</p>
+          <p>Bilgilerinizi ve Gereğini rica eder. Başarılar dilerim.</p>
+        </div>
+        <div class="signature">
+          <div>${principalName}</div>
+          <div>Müdür</div>
+        </div>
+      </div>
+
+      <table class="main-table">
+        <thead>
+          <tr>
+            <th class="day-col"></th>
+            ${times.map((t, idx) => `<th class="lesson-col"><strong>${idx + 1}</strong><br><span class="time">${t}</span></th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${DAYS.map(day => `
+          <tr>
+            <td class="day-col"><strong>${day}</strong></td>
+            ${times.map((_, idx) => {
+              const cell = schedule[day]?.[idx]
+              if (!cell?.subjectId) return '<td class="lesson-col"></td>'
+              return `<td class="lesson-col">
+                <div class="cell-class">${cell.className || ''}</div>
+                <div class="cell-subject">${getSubjectAbbr(cell.subjectName || '')}</div>
+              </td>`
+            }).join('')}
+          </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div class="bottom-section">
+        <div class="bottom-left">
+          <div class="pay-row">
+            <span class="pay-item"><strong><u>MAAŞ : ${totalHours || ''}</u></strong></span>
+            <span class="pay-item"><strong><u>ÜCRET :0</u></strong></span>
+            <span class="pay-item"><strong><u>TOPLAM :${totalHours || ''}</u></strong></span>
+          </div>
+          <div class="meta-row">
+            <span>Sınıf Reh.Öğretmenliği :</span>
+            <span class="meta-line"></span>
+            <span>Eğitsel Kolu :</span>
+            <span class="meta-line"></span>
+          </div>
+          <div class="duty-row">
+            <span>Nöbet Günü ve Yeri :</span>
+            <span class="duty-line"></span>
+          </div>
+        </div>
+        <div class="bottom-right">
+          <div class="receipt-title">ASLINI ALDIM</div>
+          <div>Tarih</div>
+          <div class="receipt-date">...../...../2025</div>
+        </div>
+      </div>
+    </div>`
+
   return `<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -417,129 +495,167 @@ export function generateTeacherHandbookHTML(
   <style>
     @page { size: A4 portrait; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; background: white; }
+    body { font-family: Arial, sans-serif; font-size: 7.5pt; color: #000; background: white; }
 
-    .page { width: 210mm; min-height: 297mm; padding: 12mm; box-sizing: border-box; }
+    .page {
+      width: 210mm;
+      height: 297mm;
+      padding: 0;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+    }
 
-    .header { height: 20mm; text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.3; }
-    .header div { margin: 1mm 0; }
-    .header-date { text-align: right; font-weight: normal; font-size: 10pt; }
+    .half {
+      width: 100%;
+      height: 148.5mm;
+      padding: 5mm 12mm 3mm 12mm;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
 
-    .teacher-info { margin: 4mm 0 8mm 0; font-size: 10pt; }
-    .teacher-info div { margin: 1mm 0; }
+    .header {
+      text-align: center;
+      font-weight: bold;
+      font-size: 8.5pt;
+      line-height: 1.25;
+      margin-bottom: 2mm;
+    }
 
-    .message-block { min-height: 28mm; display: flex; justify-content: space-between; align-items: stretch; margin-bottom: 6mm; }
-    .message { width: 135mm; font-size: 10.5pt; line-height: 1.2; text-align: justify; }
-    .message p { margin: 1mm 0; white-space: nowrap; letter-spacing: 0.1px; }
-    .signature { width: 35mm; text-align: right; font-weight: bold; font-size: 10.5pt; line-height: 1.3; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-end; }
+    .info-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-size: 7.5pt;
+      margin-bottom: 0.5mm;
+    }
+    .info-left div { margin: 0.3mm 0; }
+    .info-date { font-weight: bold; font-size: 7.5pt; }
 
-    .main-table { width: 170mm; border-collapse: collapse; margin: 0 auto 8mm auto; }
-    .main-table th, .main-table td { border: 0.3mm solid #000; text-align: center; vertical-align: middle; }
-    .main-table thead th { padding: 2mm 0; }
-    .main-table .day-col { width: 28mm; font-weight: bold; font-size: 10pt; }
-    .main-table .lesson-col { width: 20mm; height: 10mm; }
-    .cell-subject { font-weight: bold; font-size: 10pt; line-height: 1.1; }
-    .cell-class { font-size: 9pt; line-height: 1.1; margin-top: 0.5mm; }
+    .message-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 2mm;
+    }
+    .message {
+      font-size: 7pt;
+      line-height: 1.15;
+      flex: 1;
+    }
+    .message p { margin: 0.2mm 0; }
+    .signature {
+      text-align: right;
+      font-weight: bold;
+      font-size: 7pt;
+      line-height: 1.25;
+      min-width: 30mm;
+    }
 
-    .pay-row { width: 170mm; margin: 0 auto 4mm auto; display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 6mm; font-size: 10pt; }
-    .pay-item { display: flex; align-items: center; gap: 4mm; }
-    .pay-label { font-weight: bold; white-space: nowrap; }
+    .main-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 auto 2mm auto;
+    }
+    .main-table th,
+    .main-table td {
+      border: 0.3mm solid #000;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .main-table thead th {
+      padding: 0.8mm 0;
+      font-size: 7pt;
+    }
+    .main-table thead th .time {
+      font-size: 6pt;
+      font-weight: normal;
+    }
+    .main-table .day-col {
+      width: 20mm;
+      font-size: 7pt;
+      padding: 0.5mm;
+    }
+    .main-table .lesson-col {
+      height: 7.5mm;
+      font-size: 6.5pt;
+      padding: 0.3mm;
+    }
+    .cell-class {
+      font-weight: bold;
+      font-size: 7pt;
+      line-height: 1.05;
+    }
+    .cell-subject {
+      font-size: 6pt;
+      line-height: 1.05;
+    }
 
-    .meta-row { width: 170mm; margin: 0 auto 4mm auto; display: grid; grid-template-columns: auto 1fr auto 1fr; column-gap: 4mm; font-size: 10pt; align-items: center; }
-    .meta-label { font-weight: bold; white-space: nowrap; }
-    .meta-line { border-bottom: 0.3mm solid #000; height: 0; min-width: 30mm; }
+    .bottom-section {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-size: 7pt;
+    }
+    .bottom-left {
+      flex: 1;
+    }
+    .bottom-right {
+      min-width: 28mm;
+      text-align: right;
+      font-size: 7pt;
+      line-height: 1.3;
+    }
 
-    .duty-row { width: 170mm; margin: 0 auto 8mm auto; display: flex; align-items: flex-end; gap: 4mm; font-size: 10pt; }
-    .duty-label { font-weight: bold; }
-    .duty-line { flex: 1; border-bottom: 0.3mm solid #000; height: 0; min-width: 80mm; margin-bottom: -1mm; }
+    .pay-row {
+      display: flex;
+      gap: 6mm;
+      margin-bottom: 1mm;
+      font-size: 7pt;
+    }
+    .pay-item { white-space: nowrap; }
 
-    .receipt { width: 170mm; margin: 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; font-size: 10pt; gap: 1mm; padding-top: 4mm; }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 2mm;
+      margin-bottom: 0.5mm;
+      font-size: 7pt;
+    }
+    .meta-line {
+      border-bottom: 0.3mm solid #000;
+      height: 0;
+      min-width: 20mm;
+      flex: 1;
+    }
+
+    .duty-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 2mm;
+      margin-bottom: 1mm;
+      font-size: 7pt;
+    }
+    .duty-line {
+      flex: 1;
+      border-bottom: 0.3mm solid #000;
+      height: 0;
+      min-width: 40mm;
+    }
+
     .receipt-title { font-weight: bold; }
     .receipt-date { white-space: nowrap; }
 
-    @media print { body { background: white; } .page { margin: 0; padding: 12mm; } }
+    @media print {
+      body { background: white; }
+      .page { margin: 0; }
+    }
   </style>
 </head>
 <body>
   <div class="page">
-    <div class="header">
-      <div class="header-date">${today}</div>
-      <div>T.C.</div>
-      <div>FİNİKE KAYMAKAMLIĞI</div>
-      <div>${schoolNameSafe}</div>
-    </div>
-
-    <div class="teacher-info">
-      <div><strong>Öğretmenin Adı</strong> : ${teacher.name.toUpperCase()}</div>
-      <div><strong>Konu</strong> : Haftalık Ders Programı</div>
-    </div>
-
-    <div class="message-block">
-      <div class="message">
-        <p>2025 - 2026 Öğretim Yılında ${today} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
-        <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
-      </div>
-      <div class="signature">
-        <div>${principalName}</div>
-        <div>Müdür</div>
-      </div>
-    </div>
-
-    <table class="main-table">
-      <thead>
-        <tr>
-          <th class="day-col"></th>
-          ${times.map((t, idx) => `<th class="lesson-col">${idx + 1}<br>${t}</th>`).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${DAYS.map(day => `
-        <tr>
-          <td class="day-col">${day}</td>
-          ${times.map((_, idx) => {
-            const cell = schedule[day]?.[idx]
-            if (!cell?.subjectId) return '<td class="lesson-col">—</td>'
-            return `<td class="lesson-col">
-              <div class="cell-subject">${getSubjectAbbr(cell.subjectName || '')}</div>
-              <div class="cell-class">${cell.className || ''}</div>
-            </td>`
-          }).join('')}
-        </tr>
-        `).join('')}
-      </tbody>
-    </table>
-
-    <div class="pay-row">
-      <div class="pay-item">
-        <span class="pay-label">MAAŞ :</span>
-        <span>${totalHours || ''}</span>
-      </div>
-      <div class="pay-item">
-        <span class="pay-label">ÜCRET :</span>
-        <span class="pay-line"></span>
-      </div>
-      <div class="pay-item">
-        <span class="pay-label">TOPLAM :</span>
-        <span>${totalHours || ''}</span>
-      </div>
-    </div>
-
-    <div class="duty-row">
-      <span class="duty-label">NÖBET GÜNÜ VE YERİ :</span>
-      <span class="duty-line"></span>
-    </div>
-
-    <div class="meta-row">
-      <span class="meta-label">Sınıf Reh.Öğretmenliği :</span>
-      <span class="meta-line"></span>
-      <span class="meta-label">Eğitsel Kolu :</span>
-      <span class="meta-line"></span>
-    </div>
-
-    <div class="receipt">
-      <div class="receipt-title">ASLINI ALDIM</div>
-      <div class="receipt-date">TARİH : __/__/____</div>
-    </div>
+    ${halfContent}
+    ${halfContent}
   </div>
 </body>
 </html>`
