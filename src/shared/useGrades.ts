@@ -14,6 +14,7 @@ export const DEFAULT_GRADES: { grade: string; sections: string[] }[] = [
   { grade: '6', sections: ['A', 'B'] },
   { grade: '7', sections: ['A', 'B'] },
   { grade: '8', sections: ['A', 'B'] },
+  { grade: 'Özel Eğitim', sections: ['A'] },
 ]
 
 const DEFAULT_CONFIG: SchoolConfig = {
@@ -25,9 +26,16 @@ const DEFAULT_CONFIG: SchoolConfig = {
 
 export function useGrades() {
   const [cfg] = useLocalStorage<SchoolConfig>('schoolConfig', DEFAULT_CONFIG)
+  const mergedGrades = (() => {
+    const base = cfg.grades && cfg.grades.length ? [...cfg.grades] : [...DEFAULT_GRADES]
+    for (const def of DEFAULT_GRADES) {
+      if (!base.some((g) => g.grade === def.grade)) base.push(def)
+    }
+    return base
+  })()
   const grades: GradeItem[] = useMemo(
-    () => cfg.grades.map((g) => ({ id: g.grade, label: `${g.grade}. Sınıf` })),
-    [cfg.grades]
+    () => mergedGrades.map((g) => ({ id: g.grade, label: `${g.grade}. Sınıf` })),
+    [mergedGrades]
   )
   return grades
 }
