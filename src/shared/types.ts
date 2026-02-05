@@ -33,4 +33,6 @@ export type Teacher = {
   maxHours?: number
   unavailable?: Partial<Record<Day, string[]>>
   preferredGrades?: string[]
+  // Optional: preferred grades per subject
+  preferredGradesBySubject?: Record<string, string[]>
 }

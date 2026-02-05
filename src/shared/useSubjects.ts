@@ -13,17 +13,29 @@ type SubjectTemplate = {
 const DEFAULT_TEMPLATES: SubjectTemplate[] = [
   { name: 'Türkçe', weeklyHoursByGrade: { '5': 6, '6': 6, '7': 5, '8': 5 } },
   { name: 'Matematik', weeklyHoursByGrade: { '5': 5, '6': 5, '7': 5, '8': 5 } },
-  { name: 'Fen', weeklyHoursByGrade: { '5': 4, '6': 4, '7': 4, '8': 4 } },
-  { name: 'Sosyal', weeklyHoursByGrade: { '5': 3, '6': 3, '7': 3, '8': 0 } },
+  { name: 'Fen Bilimleri', weeklyHoursByGrade: { '5': 4, '6': 4, '7': 4, '8': 4 } },
+  { name: 'Sosyal Bilgiler', weeklyHoursByGrade: { '5': 3, '6': 3, '7': 3, '8': 0 } },
   { name: 'İngilizce', weeklyHoursByGrade: { '5': 3, '6': 3, '7': 4, '8': 4 } },
-  { name: 'Din Kültürü', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2 } },
-  { name: 'Görsel Sanatlar', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1 } },
-  { name: 'Müzik', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1 } },
-  { name: 'Beden Eğitimi', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2 } },
-  { name: 'Bilişim', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 0, '8': 0 } },
+  { name: 'DİKAB', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2, 'Özel Eğitim': 0 } },
+  { name: 'Görsel Sanatlar', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
+  { name: 'Müzik', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
+  { name: 'Beden Eğitimi', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 2, '8': 2, 'Özel Eğitim': 0 } },
+  { name: 'Bilişim Teknolojileri', weeklyHoursByGrade: { '5': 2, '6': 2, '7': 0, '8': 0 } },
   { name: 'Teknoloji ve Tasarım', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 2, '8': 2 } },
   { name: 'İnkılap Tarihi', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
-  { name: 'Rehberlik', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1 } },
+  { name: 'Rehberlik ve Kariyer Planlama', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 1, 'Özel Eğitim': 0 } },
+  // Seçmeli dersler
+  { name: 'Seçmeli Masal ve Destanlar', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 1, '8': 0 } },
+  { name: 'Seçmeli İngilizce', weeklyHoursByGrade: { '5': 1, '6': 1, '7': 2, '8': 0 } },
+  { name: 'Seçmeli Peygamberimizin Hayatı', weeklyHoursByGrade: { '5': 2, '6': 0, '7': 2, '8': 0 } },
+  { name: 'Seçmeli KMY', weeklyHoursByGrade: { '5': 0, '6': 2, '7': 0, '8': 2 } },
+  { name: 'Seçmeli Medya Okuryazarlığı', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
+  { name: 'Seçmeli Spor ve Fiziki Etkinlikler', weeklyHoursByGrade: { '5': 0, '6': 0, '7': 0, '8': 2 } },
+  // Özel Eğitim
+  { name: 'Özel Eğitim Din Kültürü', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
+  { name: 'Özel Eğitim Beden', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
+  { name: 'Özel Eğitim Görsel Sanatlar', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
+  { name: 'Özel Eğitim Müzik', weeklyHoursByGrade: { 'Özel Eğitim': 2 } },
 ]
 
 export const DEFAULT_SUBJECTS: Subject[] = [] // başlangıç boş; kullanıcı isterse doldurur

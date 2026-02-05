@@ -16,8 +16,7 @@ type FormState = {
   minHours: string
   maxHours: string
   unavailable: Partial<Record<Day, string[]>>
-  preferredGradesMode: 'all' | 'custom'
-  preferredGrades: string[]
+  preferredBySubject: Record<string, { mode: 'all' | 'custom'; grades: string[] }>
 }
 
 export default function Ogretmenler() {
@@ -54,13 +53,22 @@ export default function Ogretmenler() {
     if (data.name.trim().length < 2) { pushToast({ kind: 'error', text: 'İsim en az 2 karakter' }); return }
     if (!data.subjectIds || data.subjectIds.length === 0) { pushToast({ kind: 'error', text: 'En az bir branş seçin' }); return }
     if (min > 0 && max > 0 && min > max) { pushToast({ kind: 'error', text: 'Min, Max değerinden büyük olamaz' }); return }
+    const preferredGradesBySubject: Record<string, string[]> = {}
+    data.subjectIds.forEach(id => {
+      const pref = data.preferredBySubject[id]
+      if (pref?.mode === 'custom' && pref.grades.length) {
+        preferredGradesBySubject[id] = Array.from(new Set(pref.grades))
+      }
+    })
+    const primaryPref = data.subjectIds.length ? preferredGradesBySubject[data.subjectIds[0]] : undefined
     const normalized: Omit<Teacher,'id'> = {
       name: data.name.trim(),
       subjectIds: Array.from(new Set(data.subjectIds)),
       minHours: min,
       maxHours: max,
       unavailable: normalizeUnavailable(data.unavailable),
-      preferredGrades: data.preferredGradesMode === 'all' ? undefined : Array.from(new Set(data.preferredGrades || [])),
+      preferredGrades: primaryPref,
+      preferredGradesBySubject: Object.keys(preferredGradesBySubject).length ? preferredGradesBySubject : undefined,
     }
     if (editing) { update(editing.id, normalized); pushToast({ kind: 'success', text: 'Öğretmen güncellendi' }) }
     else { add(normalized); pushToast({ kind: 'success', text: 'Öğretmen eklendi' }) }
@@ -133,7 +141,7 @@ export default function Ogretmenler() {
                   <td>{t.name}</td>
                   <td>{branchNames(getSubjectIds(t)) || '—'}</td>
                   <td>{t.minHours ?? 0} / {t.maxHours ?? 0}</td>
-                  <td>{formatPref(t.preferredGrades, gradesList)}</td>
+                  <td>{formatPrefBySubject(t, subjects, gradesList)}</td>
                   <td>
                     <button className="btn btn-outline btn-sm" onClick={()=> setAvailEditing(t)} aria-label="Uygunluğu düzenle">Düzenle</button>
                   </td>
@@ -164,7 +172,7 @@ export default function Ogretmenler() {
                   <div className="meta">
                     <span className="pill">Branş(lar): {branchNames(getSubjectIds(t)) || '—'}</span>
                     <span className="pill">Min/Max: {t.minHours ?? 0}/{t.maxHours ?? 0}</span>
-                    <span className="pill">Tercih: {formatPref(t.preferredGrades, gradesList)}</span>
+                    <span className="pill">Tercih: {formatPrefBySubject(t, subjects, gradesList)}</span>
                   </div>
                 </div>
               </div>
@@ -224,15 +232,29 @@ function TeacherModal({ open, onClose, onSave, initial, subjects, grades, nameRe
   grades: { id: string; label: string }[]
   nameRef: React.RefObject<HTMLInputElement | null>
 }) {
-  const buildState = (init?: Teacher): FormState => ({
-    name: init?.name ?? '',
-    subjectIds: getSubjectIds(init),
-    minHours: init?.minHours ? String(init.minHours) : '15',
-    maxHours: init?.maxHours ? String(init.maxHours) : '30',
-    unavailable: init?.unavailable ?? {},
-    preferredGradesMode: init?.preferredGrades && init.preferredGrades.length > 0 ? 'custom' : 'all',
-    preferredGrades: init?.preferredGrades ?? [],
-  })
+  const buildState = (init?: Teacher): FormState => {
+    const subjectIds = getSubjectIds(init)
+    const preferredBySubject: FormState['preferredBySubject'] = {}
+    subjectIds.forEach((id, idx) => {
+      const customGrades = init?.preferredGradesBySubject?.[id]
+      // fallback: legacy preferredGrades applied to primary subject only
+      const legacy = !customGrades && idx === 0 ? init?.preferredGrades : undefined
+      const gradesVal = customGrades ?? legacy ?? []
+      preferredBySubject[id] = {
+        mode: gradesVal.length > 0 ? 'custom' : 'all',
+        grades: gradesVal,
+      }
+    })
+
+    return {
+      name: init?.name ?? '',
+      subjectIds,
+      minHours: init?.minHours ? String(init.minHours) : '15',
+      maxHours: init?.maxHours ? String(init.maxHours) : '30',
+      unavailable: init?.unavailable ?? {},
+      preferredBySubject,
+    }
+  }
 
   const [state, setState] = useState<FormState>(() => buildState(initial))
   // Multi-branch via two clean selects (primary + optional secondary)
@@ -304,9 +326,16 @@ function TeacherModal({ open, onClose, onSave, initial, subjects, grades, nameRe
               onChange={(e)=> {
                 const v = e.target.value
                 setState(prev => {
-                  const rest = (prev.subjectIds || []).filter(id => id !== v)
-                  const next = v ? [v, ...rest.filter(id => id !== v)] : rest
-                  return { ...prev, subjectIds: next }
+                  let next = [...(prev.subjectIds || [])]
+                  if (v) {
+                    next = [v, ...next.filter(id => id !== v)]
+                  } else {
+                    next = next.filter((_, idx) => idx !== 0)
+                  }
+                  const pref = { ...prev.preferredBySubject }
+                  Object.keys(pref).forEach(id => { if (!next.includes(id)) delete pref[id] })
+                  next.forEach(id => { if (!pref[id]) pref[id] = { mode: 'all', grades: [] } })
+                  return { ...prev, subjectIds: next, preferredBySubject: pref }
                 })
               }}
               aria-invalid={!!errors.subjectIds}
@@ -341,7 +370,12 @@ function TeacherModal({ open, onClose, onSave, initial, subjects, grades, nameRe
                           className="menu-item"
                           role="option"
                           onClick={() => {
-                            setState(prev => ({ ...prev, subjectIds: [...prev.subjectIds, s.id] }))
+                            setState(prev => {
+                              const next = [...prev.subjectIds, s.id]
+                              const pref = { ...prev.preferredBySubject }
+                              if (!pref[s.id]) pref[s.id] = { mode: 'all', grades: [] }
+                              return { ...prev, subjectIds: next, preferredBySubject: pref }
+                            })
                             setPickerOpen(false)
                           }}
                         >
@@ -363,7 +397,12 @@ function TeacherModal({ open, onClose, onSave, initial, subjects, grades, nameRe
                 className="branch-remove"
                 aria-label="Branşı kaldır"
                 title="Kaldır"
-                onClick={() => setState(prev => ({ ...prev, subjectIds: prev.subjectIds.filter(x => x !== id) }))}
+                onClick={() => setState(prev => {
+                  const nextIds = prev.subjectIds.filter(x => x !== id)
+                  const pref = { ...prev.preferredBySubject }
+                  delete pref[id]
+                  return { ...prev, subjectIds: nextIds, preferredBySubject: pref }
+                })}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="9"></circle>
@@ -375,28 +414,70 @@ function TeacherModal({ open, onClose, onSave, initial, subjects, grades, nameRe
         </div>
 
         <div className="field">
-          <span className="field-label">Tercih Sınıflar</span>
-          <div className="segmented seg-xs" role="group" aria-label="Tercih Sınıflar modu" style={{ marginBottom: 8 }}>
-            <button type="button" className={`seg ${state.preferredGradesMode === 'all' ? 'active free' : ''}`} aria-pressed={state.preferredGradesMode === 'all'} onClick={() => setState(prev => ({ ...prev, preferredGradesMode: 'all' }))}>Hepsi</button>
-            <button type="button" className={`seg ${state.preferredGradesMode === 'custom' ? 'active free' : ''}`} aria-pressed={state.preferredGradesMode === 'custom'} onClick={() => setState(prev => ({ ...prev, preferredGradesMode: 'custom', preferredGrades: prev.preferredGrades.length ? prev.preferredGrades : grades.map(g=> g.id) }))}>Özel</button>
-          </div>
-          {state.preferredGradesMode === 'custom' && (
-            <div className="check-grid">
-              {grades.map(g => (
-                <label key={g.id} className="check-item">
-                  <input
-                    type="checkbox"
-                    checked={state.preferredGrades.includes(g.id)}
-                    onChange={() => setState(prev => ({
-                      ...prev,
-                      preferredGrades: prev.preferredGrades.includes(g.id)
-                        ? prev.preferredGrades.filter(x => x !== g.id)
-                        : [...prev.preferredGrades, g.id]
-                    }))}
-                  />
-                  <span>{g.label}</span>
-                </label>
-              ))}
+          <span className="field-label">Tercih Sınıflar (branşa göre)</span>
+          {state.subjectIds.length === 0 ? (
+            <div className="muted" style={{ fontStyle: 'italic' }}>Branş ekledikçe tercih sınıflarını seçebilirsiniz.</div>
+          ) : (
+            <div className="stack" style={{ gap: 16 }}>
+              {state.subjectIds.map((id) => {
+                const subjName = subjects.find(s => s.id === id)?.name || id
+                const pref = state.preferredBySubject[id] ?? { mode: 'all', grades: [] }
+                const selectedGrades = pref.grades.map(g => grades.find(x => x.id === g)?.label || g)
+                return (
+                  <div
+                    key={id}
+                    className="glass"
+                    style={{
+                      padding: 8,
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 10,
+                      background: 'rgba(255,255,255,0.02)',
+                      boxShadow: '0 6px 16px rgba(0,0,0,0.18)',
+                    }}
+                  >
+                    <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{subjName}</div>
+                      <div className="segmented seg-xs" role="group" aria-label={`${subjName} tercih modu`}>
+                        <button type="button" className={`seg ${pref.mode === 'all' ? 'active free' : ''}`} aria-pressed={pref.mode === 'all'} onClick={() => setState(prev => ({
+                          ...prev,
+                          preferredBySubject: { ...prev.preferredBySubject, [id]: { mode: 'all', grades: [] } }
+                        }))}>Hepsi</button>
+                        <button type="button" className={`seg ${pref.mode === 'custom' ? 'active free' : ''}`} aria-pressed={pref.mode === 'custom'} onClick={() => setState(prev => ({
+                          ...prev,
+                          preferredBySubject: {
+                            ...prev.preferredBySubject,
+                            [id]: { mode: 'custom', grades: pref.grades.length ? pref.grades : grades.map(g => g.id) }
+                          }
+                        }))}>Özel</button>
+                      </div>
+                    </div>
+                    {pref.mode === 'custom' && (
+                      <div className="check-grid">
+                        {grades.map(g => (
+                          <label key={g.id} className="check-item">
+                            <input
+                              type="checkbox"
+                              checked={pref.grades.includes(g.id)}
+                              onChange={() => setState(prev => {
+                                const cur = prev.preferredBySubject[id]?.grades ?? []
+                                const nextGrades = cur.includes(g.id) ? cur.filter(x => x !== g.id) : [...cur, g.id]
+                                return {
+                                  ...prev,
+                                  preferredBySubject: {
+                                    ...prev.preferredBySubject,
+                                    [id]: { mode: 'custom', grades: nextGrades }
+                                  }
+                                }
+                              })}
+                            />
+                            <span>{g.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -524,4 +605,21 @@ function formatPref(pref: string[] | undefined, gradesList: { id: string; label:
   if (!pref || pref.length === 0) return 'Hepsi'
   const map = new Map(gradesList.map(g => [g.id, g.label]))
   return pref.map(id => map.get(id) || id).join(', ')
+}
+
+function formatPrefBySubject(
+  t: Teacher,
+  subjects: { id: string; name: string }[],
+  gradesList: { id: string; label: string }[]
+): string {
+  if (t.preferredGradesBySubject && Object.keys(t.preferredGradesBySubject).length) {
+    const parts = Object.entries(t.preferredGradesBySubject)
+      .filter(([, grades]) => grades && grades.length)
+      .map(([sid, grades]) => {
+        const name = subjects.find(s => s.id === sid)?.name || sid
+        return `${name}: ${formatPref(grades, gradesList)}`
+      })
+    if (parts.length) return parts.join(' • ')
+  }
+  return formatPref(t.preferredGrades, gradesList)
 }
