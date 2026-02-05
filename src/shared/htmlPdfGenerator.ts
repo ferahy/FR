@@ -409,6 +409,89 @@ export function generateTeacherHandbookHTML(
     })
   })
 
+  const renderCopy = () => `
+    <div class="copy">
+      <div class="header">
+        <div class="header-date">${today}</div>
+        <div>T.C.</div>
+        <div>FİNİKE KAYMAKAMLIĞI</div>
+        <div>${schoolNameSafe}</div>
+      </div>
+
+      <div class="teacher-info">
+        <div><strong>Öğretmenin Adı</strong> : ${teacher.name.toUpperCase()}</div>
+        <div><strong>Konu</strong> : Haftalık Ders Programı</div>
+      </div>
+
+      <div class="message-block">
+        <div class="message">
+          <p>2025 - 2026 Öğretim Yılında ${today} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
+          <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
+        </div>
+        <div class="signature">
+          <div>${principalName}</div>
+          <div>Müdür</div>
+        </div>
+      </div>
+
+      <table class="main-table">
+        <thead>
+          <tr>
+            <th class="day-col"></th>
+            ${times.map((t, idx) => `<th class="lesson-col">${idx + 1}<br>${t}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${DAYS.map(day => `
+          <tr>
+            <td class="day-col">${day}</td>
+            ${times.map((_, idx) => {
+              const cell = schedule[day]?.[idx]
+              if (!cell?.subjectId) return '<td class="lesson-col">—</td>'
+              return `<td class="lesson-col">
+                <div class="cell-subject">${getSubjectAbbr(cell.subjectName || '')}</div>
+                <div class="cell-class">${cell.className || ''}</div>
+              </td>`
+            }).join('')}
+          </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div class="pay-row">
+        <div class="pay-item">
+          <span class="pay-label">MAAŞ :</span>
+          <span>${totalHours || ''}</span>
+        </div>
+        <div class="pay-item">
+          <span class="pay-label">ÜCRET :</span>
+          <span class="pay-line"></span>
+        </div>
+        <div class="pay-item">
+          <span class="pay-label">TOPLAM :</span>
+          <span>${totalHours || ''}</span>
+        </div>
+      </div>
+
+      <div class="duty-row">
+        <span class="duty-label">NÖBET GÜNÜ VE YERİ :</span>
+        <span class="duty-line"></span>
+      </div>
+
+      <div class="meta-row">
+        <span class="meta-label">Sınıf Reh.Öğretmenliği :</span>
+        <span class="meta-line"></span>
+        <span class="meta-label">Eğitsel Kolu :</span>
+        <span class="meta-line"></span>
+      </div>
+
+      <div class="receipt">
+        <div class="receipt-title">ASLINI ALDIM</div>
+        <div class="receipt-date">TARİH : __/__/____</div>
+      </div>
+    </div>
+  `
+
   return `<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -419,9 +502,11 @@ export function generateTeacherHandbookHTML(
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; background: white; }
 
-    .page { width: 210mm; min-height: 297mm; padding: 12mm; box-sizing: border-box; }
+    .page { width: 210mm; min-height: 297mm; padding: 10mm 12mm; box-sizing: border-box; display: flex; flex-direction: column; gap: 10mm; }
 
-    .header { height: 20mm; text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.3; }
+    .copy { border: 0.4mm solid #000; padding: 6mm 8mm; box-sizing: border-box; page-break-inside: avoid; }
+
+    .header { min-height: 18mm; text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.3; position: relative; }
     .header div { margin: 1mm 0; }
     .header-date { text-align: right; font-weight: normal; font-size: 10pt; }
 
@@ -462,84 +547,8 @@ export function generateTeacherHandbookHTML(
 </head>
 <body>
   <div class="page">
-    <div class="header">
-      <div class="header-date">${today}</div>
-      <div>T.C.</div>
-      <div>FİNİKE KAYMAKAMLIĞI</div>
-      <div>${schoolNameSafe}</div>
-    </div>
-
-    <div class="teacher-info">
-      <div><strong>Öğretmenin Adı</strong> : ${teacher.name.toUpperCase()}</div>
-      <div><strong>Konu</strong> : Haftalık Ders Programı</div>
-    </div>
-
-    <div class="message-block">
-      <div class="message">
-        <p>2025 - 2026 Öğretim Yılında ${today} tarihinden itibaren uygulanacak programınız aşağıya çıkartılmıştır.</p>
-        <p>Bilgilerinizi ve gereğini rica eder. Başarılar dilerim.</p>
-      </div>
-      <div class="signature">
-        <div>${principalName}</div>
-        <div>Müdür</div>
-      </div>
-    </div>
-
-    <table class="main-table">
-      <thead>
-        <tr>
-          <th class="day-col"></th>
-          ${times.map((t, idx) => `<th class="lesson-col">${idx + 1}<br>${t}</th>`).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${DAYS.map(day => `
-        <tr>
-          <td class="day-col">${day}</td>
-          ${times.map((_, idx) => {
-            const cell = schedule[day]?.[idx]
-            if (!cell?.subjectId) return '<td class="lesson-col">—</td>'
-            return `<td class="lesson-col">
-              <div class="cell-subject">${getSubjectAbbr(cell.subjectName || '')}</div>
-              <div class="cell-class">${cell.className || ''}</div>
-            </td>`
-          }).join('')}
-        </tr>
-        `).join('')}
-      </tbody>
-    </table>
-
-    <div class="pay-row">
-      <div class="pay-item">
-        <span class="pay-label">MAAŞ :</span>
-        <span>${totalHours || ''}</span>
-      </div>
-      <div class="pay-item">
-        <span class="pay-label">ÜCRET :</span>
-        <span class="pay-line"></span>
-      </div>
-      <div class="pay-item">
-        <span class="pay-label">TOPLAM :</span>
-        <span>${totalHours || ''}</span>
-      </div>
-    </div>
-
-    <div class="duty-row">
-      <span class="duty-label">NÖBET GÜNÜ VE YERİ :</span>
-      <span class="duty-line"></span>
-    </div>
-
-    <div class="meta-row">
-      <span class="meta-label">Sınıf Reh.Öğretmenliği :</span>
-      <span class="meta-line"></span>
-      <span class="meta-label">Eğitsel Kolu :</span>
-      <span class="meta-line"></span>
-    </div>
-
-    <div class="receipt">
-      <div class="receipt-title">ASLINI ALDIM</div>
-      <div class="receipt-date">TARİH : __/__/____</div>
-    </div>
+    ${renderCopy()}
+    ${renderCopy()}
   </div>
 </body>
 </html>`
