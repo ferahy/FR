@@ -14,6 +14,7 @@ export type Subject = {
   weeklyHoursByGrade: Record<string, number>
   rule?: SubjectRule
   color?: string
+  priority?: boolean
 }
 
 export type GradeItem = {

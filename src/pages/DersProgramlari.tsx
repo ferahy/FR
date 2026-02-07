@@ -452,7 +452,6 @@ export default function DersProgramlari() {
     ) => {
       const subject = subjects.find(s => s.id === subjId)
       const rule = subject?.rule
-      const gradeId = classGradeMap.get(classKey) ?? ''
       const addCount = isBlock ? 2 : 1
 
       const currentDayCount = daySubjCount(classKey, day, subjId)
@@ -1259,7 +1258,7 @@ export default function DersProgramlari() {
       for (let pass = 0; pass < 5; pass++) {
         let progress = false
         const dayOrderLocal = shuffleInPlace([...DAYS], rng)
-        const slotOrderLocal = shuffleInPlace([...slotOrder], rng)
+        const slotOrderLocal = shuffleInPlace(Array.from({ length: slots.length }, (_, i) => i), rng)
 
         for (const c of classes) {
           const gradeId = c.grade
@@ -1893,6 +1892,16 @@ function pickTeacher(
     }
   }
   return pick.id
+}
+
+function mulberry32(seed: number): () => number {
+  let t = seed >>> 0
+  return () => {
+    t += 0x6D2B79F5
+    let r = Math.imul(t ^ (t >>> 15), t | 1)
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61)
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
+  }
 }
 
 // shortName removed (show full name under subject)
