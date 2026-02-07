@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Modal from '../components/Modal'
 import { useSchool } from '../shared/useSchool'
 import { useGrades } from '../shared/useGrades'
@@ -32,6 +32,31 @@ export default function DersProgramlari() {
   const [repairLog, setRepairLog] = useState<string[]>([])
   const [repairStats, setRepairStats] = useState<{ attempt: number; missing: number; best: number } | null>(null)
   const [changedCells, setChangedCells] = useState<Set<string>>(new Set())
+  const [phase, setPhase] = useState<'generate' | 'repair' | null>(null)
+  const [generationStart, setGenerationStart] = useState<number | null>(null)
+  const [repairStart, setRepairStart] = useState<number | null>(null)
+  const [progress, setProgress] = useState(0)
+
+  // İlerleme çubuğu için süre takibi (generate: 120sn, repair: 30sn)
+  useEffect(() => {
+    let timer: number | undefined
+    const tick = () => {
+      if (phase === 'generate' && generationStart != null) {
+        const elapsed = (performance.now() - generationStart) / 1000
+        setProgress(Math.min(1, elapsed / 120))
+      } else if (phase === 'repair' && repairStart != null) {
+        const elapsed = (performance.now() - repairStart) / 1000
+        setProgress(Math.min(1, elapsed / 30))
+      } else {
+        setProgress(0)
+      }
+      timer = window.setTimeout(tick, 250)
+    }
+    tick()
+    return () => {
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [phase, generationStart, repairStart])
 
   const handlePrintHandbooks = () => {
     // Generate HTML for all classes and open in new window
@@ -1018,6 +1043,8 @@ export default function DersProgramlari() {
   const repairMissing = () => {
     if (!tables || !Object.keys(tables).length) return
     setIsRepairing(true)
+    setPhase('repair')
+    setRepairStart(performance.now())
     setRepairLog([])
     setRepairStats({ attempt: 0, missing: 0, best: 999 })
     setChangedCells(new Set())
@@ -1545,6 +1572,9 @@ export default function DersProgramlari() {
         const changed = detectChangedCells(tables, state.tables)
         setChangedCells(changed)
         setIsRepairing(false)
+        setPhase(null)
+        setProgress(0)
+        setRepairStart(null)
         return
       }
 
@@ -1559,7 +1589,7 @@ export default function DersProgramlari() {
       // ═══════════════════════════════════════════════════════════════════════
 
       let iterationCount = 0
-      const MAX_ITERATIONS = 1000
+      const MAX_ITERATIONS = 6000
 
       // Strateji 1: Önce en kolay dersler (en çok seçenek)
       // Strateji 2: Önce en zor dersler (en az seçenek - MRV)
@@ -1597,6 +1627,9 @@ export default function DersProgramlari() {
           setRepairStats({ attempt: attemptCount, missing: bestMissing, best: bestMissing })
           setChangedCells(detectChangedCells(tables, bestState?.tables ?? state.tables))
           setIsRepairing(false)
+          setPhase(null)
+          setProgress(0)
+          setRepairStart(null)
           return
         }
 
@@ -1609,6 +1642,9 @@ export default function DersProgramlari() {
           setTables({ ...state.tables })
           setChangedCells(detectChangedCells(tables, state.tables))
           setIsRepairing(false)
+          setPhase(null)
+          setProgress(0)
+          setRepairStart(null)
           return
         }
 
@@ -1658,9 +1694,12 @@ export default function DersProgramlari() {
             }
             setRepairStats({ attempt: attemptCount, missing: bestMissing, best: bestMissing })
             setChangedCells(detectChangedCells(tables, bestState?.tables ?? state.tables))
-            setIsRepairing(false)
-            return
-          }
+          setIsRepairing(false)
+          setPhase(null)
+          setProgress(0)
+          setRepairStart(null)
+          return
+        }
 
           setRepairLog(prev => [...prev.slice(-9), `Strateji değişti: ${strategies[currentStrategy]}`])
           // En iyi state'e dön ve yeni stratejiyle başla
@@ -1683,6 +1722,9 @@ export default function DersProgramlari() {
 
   const generate = () => {
     setIsGenerating(true)
+    setPhase('generate')
+    setGenerationStart(performance.now())
+    setProgress(0)
     const start = performance.now()
     let best = runOnce(Date.now())
     setTables(best.tables)
@@ -1693,16 +1735,23 @@ export default function DersProgramlari() {
       if (best.totalMissing === 0) {
         setTables(best.tables)
         setIsGenerating(false)
+        setPhase(null)
+        setProgress(0)
         return
       }
-      if (now - start > 30000) {
+      if (now - start > 120000) {
         setTables(best.tables)
         setIsGenerating(false)
-        alert('30 saniye içinde eksik ders 0 bulunamadı. Öğretmen uygunluğu/tercih kısıtları çok sıkı olabilir.')
+        setPhase(null)
+        setProgress(0)
+        alert('120 saniye içinde eksik ders 0 bulunamadı. Öğretmen uygunluğu/tercih kısıtları çok sıkı olabilir.')
+        if (best.totalMissing > 0) {
+          window.setTimeout(() => repairMissing(), 10)
+        }
         return
       }
 
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 50; i++) {
         const res = runOnce(Date.now() + seed * 97)
         seed += 1
         setTables(res.tables)
@@ -1839,6 +1888,55 @@ export default function DersProgramlari() {
           </button>
         </div>
       </div>
+      {(isGenerating || isRepairing) && (
+        <div style={{
+          margin: '12px 0',
+          padding: '14px 16px',
+          borderRadius: 12,
+          background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+          color: '#e2e8f0',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+          border: '1px solid rgba(148, 163, 184, 0.18)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, letterSpacing: 0.2 }}>
+              {isGenerating ? 'Yerleştirme deneniyor…' : 'Eksik dersler için onarım çalışıyor…'}
+            </div>
+            <div style={{ fontSize: 12, color: '#cbd5e1' }}>
+              {phase === 'generate' ? '120 sn limit' : 'Onarım (30 sn)'}
+            </div>
+          </div>
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            background: 'rgba(255,255,255,0.08)',
+            borderRadius: 999,
+            overflow: 'hidden',
+            height: 12,
+            border: '1px solid rgba(255,255,255,0.08)',
+            marginBottom: 8
+          }}>
+            <div
+              style={{
+                width: `${Math.min(100, Math.max(0, progress * 100))}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg,#22d3ee,#22c55e)',
+                boxShadow: '0 0 18px rgba(34,211,238,0.6)',
+                transition: 'width 0.2s ease-out'
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#cbd5e1' }}>
+            <span>{phase === 'generate' ? 'Rastgele denemeler sürüyor…' : 'Backtracking / sistematik onarım'}</span>
+            <span>{repairStats ? `Deneme: ${repairStats.attempt} • En iyi eksik: ${repairStats.best}` : ''}</span>
+          </div>
+          {repairLog.length ? (
+            <div style={{ marginTop: 6, fontSize: 12, color: '#e2e8f0', opacity: 0.9 }}>
+              {repairLog[repairLog.length - 1]}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       <div className="timetable-sections">
         {grouped.map(([gradeId, list]) => (
@@ -1937,36 +2035,7 @@ export default function DersProgramlari() {
         <div className="muted" style={{ marginTop: 16, fontSize: 12, lineHeight: 1.4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <div style={{ fontWeight: 600 }}>Eksik Dersler ({totalDeficits})</div>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              onClick={repairMissing}
-              disabled={isGenerating || isRepairing}
-            >
-              {isRepairing ? 'Yerleştiriliyor…' : 'Yerleştir'}
-            </button>
-            {repairStats && isRepairing && (
-              <span style={{ color: '#60a5fa', fontWeight: 500 }}>
-                Deneme #{repairStats.attempt} | Şu an: {repairStats.missing} | En iyi: {repairStats.best}
-              </span>
-            )}
           </div>
-          {isRepairing && repairLog.length > 0 && (
-            <div style={{
-              background: 'rgba(0,0,0,0.3)',
-              padding: '8px 12px',
-              borderRadius: 6,
-              marginBottom: 8,
-              maxHeight: 120,
-              overflowY: 'auto',
-              fontFamily: 'monospace',
-              fontSize: 11
-            }}>
-              {repairLog.map((log, idx) => (
-                <div key={idx} style={{ opacity: idx === repairLog.length - 1 ? 1 : 0.6 }}>{log}</div>
-              ))}
-            </div>
-          )}
           {classDeficits.map(item => (
             <div key={item.classKey} style={{ marginBottom: 4 }}>
               <span style={{ fontWeight: 600 }}>{item.classKey}:</span>{' '}

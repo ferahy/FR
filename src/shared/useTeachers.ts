@@ -26,5 +26,9 @@ export function useTeachers() {
     setTeachers((prev) => prev.filter((t) => t.id !== id))
   }, [setTeachers])
 
-  return { teachers, add, update, remove, setTeachers }
+  const resetAllAvailability = useCallback(() => {
+    setTeachers(prev => prev.map(t => ({ ...t, unavailable: {} })))
+  }, [setTeachers])
+
+  return { teachers, add, update, remove, setTeachers, resetAllAvailability }
 }

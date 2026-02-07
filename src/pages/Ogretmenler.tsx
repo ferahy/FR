@@ -21,7 +21,7 @@ type FormState = {
 
 export default function Ogretmenler() {
   const { subjects } = useSubjects()
-  const { teachers, add, update, remove } = useTeachers()
+  const { teachers, add, update, remove, resetAllAvailability } = useTeachers()
   const { dailyLessons } = useSchool()
   const gradesList = useGrades()
   const slots = useMemo(() => Array.from({ length: Math.max(1, dailyLessons || 1) }, (_, i) => `S${i + 1}`), [dailyLessons])
@@ -115,6 +115,7 @@ export default function Ogretmenler() {
             <option value="all">Tüm branşlar</option>
             {subjects.map((s)=> <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          <button className="btn btn-danger" onClick={resetAllAvailability}>Uygunlukları Sıfırla</button>
         </div>
       </div>
 
