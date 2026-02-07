@@ -29,6 +29,9 @@ export default function DersProgramlari() {
   const [requirementsGrade, setRequirementsGrade] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isRepairing, setIsRepairing] = useState(false)
+  const [repairLog, setRepairLog] = useState<string[]>([])
+  const [repairStats, setRepairStats] = useState<{ attempt: number; missing: number; best: number } | null>(null)
+  const [changedCells, setChangedCells] = useState<Set<string>>(new Set())
 
   const handlePrintHandbooks = () => {
     // Generate HTML for all classes and open in new window
@@ -1015,383 +1018,667 @@ export default function DersProgramlari() {
   const repairMissing = () => {
     if (!tables || !Object.keys(tables).length) return
     setIsRepairing(true)
+    setRepairLog([])
+    setRepairStats({ attempt: 0, missing: 0, best: 999 })
+    setChangedCells(new Set())
 
-    const runRepairOnce = (seed: number) => {
-      const rng = mulberry32(seed)
-      const workingTables: Record<ClassKey, Record<Day, Cell[]>> = {}
-      for (const c of classes) {
-        workingTables[c.key] = Object.fromEntries(
-          DAYS.map(d => [d, (tables[c.key]?.[d] ?? []).map(cell => ({ ...cell }))])
-        ) as Record<Day, Cell[]>
-      }
+    // ═══════════════════════════════════════════════════════════════════════
+    // GLOBAL BACKTRACKING CSP SOLVER
+    // Tüm eksik dersleri bir bütün olarak ele alır ve backtracking ile çözer
+    // ═══════════════════════════════════════════════════════════════════════
 
-      const teacherLoad = new Map<string, number>()
-      const teacherOccupied = new Map<string, Set<string>>()
-      const placedDays: Record<ClassKey, Record<string, Set<Day>>> = {}
-
-      for (const c of classes) {
-        placedDays[c.key] = {}
+    // Değişen hücreleri tespit et
+    const detectChangedCells = (oldTables: typeof tables, newTables: typeof tables): Set<string> => {
+      const changed = new Set<string>()
+      for (const classKey of Object.keys(newTables)) {
         for (const day of DAYS) {
-          for (let si = 0; si < slots.length; si++) {
-            const cell = workingTables[c.key][day]?.[si]
-            if (!cell?.subjectId || !cell.teacherId) continue
-            teacherLoad.set(cell.teacherId, (teacherLoad.get(cell.teacherId) ?? 0) + 1)
-            if (!teacherOccupied.has(cell.teacherId)) teacherOccupied.set(cell.teacherId, new Set())
-            teacherOccupied.get(cell.teacherId)!.add(`${day}-${si}`)
-            if (!placedDays[c.key][cell.subjectId]) placedDays[c.key][cell.subjectId] = new Set<Day>()
-            placedDays[c.key][cell.subjectId].add(day)
+          const oldRow = oldTables[classKey]?.[day] ?? []
+          const newRow = newTables[classKey]?.[day] ?? []
+          for (let si = 0; si < Math.max(oldRow.length, newRow.length); si++) {
+            const oldCell = oldRow[si]
+            const newCell = newRow[si]
+            if (oldCell?.subjectId !== newCell?.subjectId || oldCell?.teacherId !== newCell?.teacherId) {
+              changed.add(`${classKey}-${day}-${si}`)
+            }
           }
         }
       }
+      return changed
+    }
 
-      const subjectHasExplicitPrefs = new Map<string, boolean>()
-      teachers.forEach(t => {
-        if (t.preferredGradesBySubject) {
-          Object.entries(t.preferredGradesBySubject).forEach(([subjId, arr]) => {
-            if (Array.isArray(arr)) subjectHasExplicitPrefs.set(subjId, true)
-          })
+    // State tipi - backtracking için snapshot
+    type ScheduleState = {
+      tables: Record<ClassKey, Record<Day, Cell[]>>
+      teacherLoad: Map<string, number>
+      teacherOccupied: Map<string, Set<string>>
+      placedDays: Record<ClassKey, Record<string, Set<Day>>>
+    }
+
+    // State'i klonla (deep copy)
+    const cloneState = (state: ScheduleState): ScheduleState => {
+      const newTables: Record<ClassKey, Record<Day, Cell[]>> = {}
+      for (const ck of Object.keys(state.tables)) {
+        newTables[ck] = {} as Record<Day, Cell[]>
+        for (const d of DAYS) {
+          newTables[ck][d] = state.tables[ck][d].map(c => ({ ...c }))
         }
-      })
+      }
+      const newTeacherLoad = new Map(state.teacherLoad)
+      const newTeacherOccupied = new Map<string, Set<string>>()
+      for (const [tid, set] of state.teacherOccupied) {
+        newTeacherOccupied.set(tid, new Set(set))
+      }
+      const newPlacedDays: Record<ClassKey, Record<string, Set<Day>>> = {}
+      for (const ck of Object.keys(state.placedDays)) {
+        newPlacedDays[ck] = {}
+        for (const sid of Object.keys(state.placedDays[ck])) {
+          newPlacedDays[ck][sid] = new Set(state.placedDays[ck][sid])
+        }
+      }
+      return { tables: newTables, teacherLoad: newTeacherLoad, teacherOccupied: newTeacherOccupied, placedDays: newPlacedDays }
+    }
 
-      const filterAllowedTeachers = (list: typeof teachers, subjId: string, gradeId: string) => {
-        const hasExplicit = subjectHasExplicitPrefs.get(subjId) ?? false
-        return list.filter(t => {
-          const subs = getTeacherSubjectIds(t)
-          if (!subs.includes(subjId)) return false
-          const hasSubjectPref = t.preferredGradesBySubject && Object.prototype.hasOwnProperty.call(t.preferredGradesBySubject, subjId)
-          if (hasExplicit) {
-            if (!hasSubjectPref) return false
-            const subjPref = t.preferredGradesBySubject?.[subjId] ?? []
+    // State'i geri yükle
+    const restoreState = (target: ScheduleState, source: ScheduleState): void => {
+      for (const ck of Object.keys(source.tables)) {
+        for (const d of DAYS) {
+          target.tables[ck][d] = source.tables[ck][d].map(c => ({ ...c }))
+        }
+      }
+      target.teacherLoad.clear()
+      for (const [k, v] of source.teacherLoad) target.teacherLoad.set(k, v)
+      target.teacherOccupied.clear()
+      for (const [k, v] of source.teacherOccupied) target.teacherOccupied.set(k, new Set(v))
+      for (const ck of Object.keys(source.placedDays)) {
+        target.placedDays[ck] = {}
+        for (const sid of Object.keys(source.placedDays[ck])) {
+          target.placedDays[ck][sid] = new Set(source.placedDays[ck][sid])
+        }
+      }
+    }
+
+    // Ana state
+    const state: ScheduleState = {
+      tables: {},
+      teacherLoad: new Map(),
+      teacherOccupied: new Map(),
+      placedDays: {}
+    }
+
+    // Mevcut tabloları yükle
+    for (const c of classes) {
+      state.tables[c.key] = Object.fromEntries(
+        DAYS.map(d => [d, (tables[c.key]?.[d] ?? []).map(cell => ({ ...cell }))])
+      ) as Record<Day, Cell[]>
+      state.placedDays[c.key] = {}
+
+      for (const day of DAYS) {
+        for (let si = 0; si < slots.length; si++) {
+          const cell = state.tables[c.key][day]?.[si]
+          if (!cell?.subjectId || !cell.teacherId) continue
+          state.teacherLoad.set(cell.teacherId, (state.teacherLoad.get(cell.teacherId) ?? 0) + 1)
+          if (!state.teacherOccupied.has(cell.teacherId)) state.teacherOccupied.set(cell.teacherId, new Set())
+          state.teacherOccupied.get(cell.teacherId)!.add(`${day}-${si}`)
+          if (!state.placedDays[c.key][cell.subjectId]) state.placedDays[c.key][cell.subjectId] = new Set<Day>()
+          state.placedDays[c.key][cell.subjectId].add(day)
+        }
+      }
+    }
+
+    const subjectHasExplicitPrefs = new Map<string, boolean>()
+    teachers.forEach(t => {
+      if (t.preferredGradesBySubject) {
+        Object.entries(t.preferredGradesBySubject).forEach(([subjId, arr]) => {
+          if (Array.isArray(arr)) subjectHasExplicitPrefs.set(subjId, true)
+        })
+      }
+    })
+
+    const filterAllowedTeachers = (list: typeof teachers, subjId: string, gradeId: string) => {
+      const hasExplicit = subjectHasExplicitPrefs.get(subjId) ?? false
+      return list.filter(t => {
+        const subs = getTeacherSubjectIds(t)
+        if (!subs.includes(subjId)) return false
+        const hasSubjectPref = t.preferredGradesBySubject && Object.prototype.hasOwnProperty.call(t.preferredGradesBySubject, subjId)
+        if (hasExplicit) {
+          if (!hasSubjectPref) return false
+          const subjPref = t.preferredGradesBySubject?.[subjId] ?? []
+          if (!subjPref.includes(gradeId)) return false
+        } else {
+          const subjPref = hasSubjectPref ? t.preferredGradesBySubject?.[subjId] ?? [] : undefined
+          if (subjPref && subjPref.length > 0) {
             if (!subjPref.includes(gradeId)) return false
           } else {
-            const subjPref = hasSubjectPref ? t.preferredGradesBySubject?.[subjId] ?? [] : undefined
-            if (subjPref && subjPref.length > 0) {
-              if (!subjPref.includes(gradeId)) return false
-            } else {
-              const prefGrades = t.preferredGrades ?? []
-              if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
-            }
-          }
-          return true
-        })
-      }
-
-      const isFree = (classKey: ClassKey, day: Day, si: number) =>
-        !workingTables[classKey][day]?.[si]?.subjectId
-
-      const daySubjCount = (classKey: ClassKey, day: Day, subjId: string): number =>
-        workingTables[classKey][day].filter(cell => cell.subjectId === subjId).length
-
-      const canPlaceWithRules = (classKey: ClassKey, day: Day, si: number, subjId: string, isBlock: boolean) => {
-        const subject = subjects.find(s => s.id === subjId)
-        const rule = subject?.rule
-        const addCount = isBlock ? 2 : 1
-
-        const currentDayCount = daySubjCount(classKey, day, subjId)
-        const perDayMax = rule?.perDayMax ?? 0
-        if (perDayMax > 0 && currentDayCount + addCount > perDayMax) return false
-
-        const minDays = rule?.minDays ?? 0
-        if (minDays > 0) {
-          const placedUnique = placedDays[classKey][subjId]?.size ?? 0
-          const alreadyThisDay = placedDays[classKey][subjId]?.has(day)
-          if (!alreadyThisDay && placedUnique < minDays - 1 && currentDayCount > 0) return false
-        }
-
-        const maxConsec = rule?.maxConsecutive ?? 0
-        if (maxConsec > 0) {
-          if (isBlock) {
-            let backward = 0
-            for (let k = si - 1; k >= 0 && workingTables[classKey][day][k]?.subjectId === subjId; k--) backward++
-            let forward = 0
-            for (let k = si + 2; k < slots.length && workingTables[classKey][day][k]?.subjectId === subjId; k++) forward++
-            if (backward + 2 + forward > maxConsec) return false
-          } else {
-            let backward = 0
-            for (let k = si - 1; k >= 0 && workingTables[classKey][day][k]?.subjectId === subjId; k--) backward++
-            let forward = 0
-            for (let k = si + 1; k < slots.length && workingTables[classKey][day][k]?.subjectId === subjId; k++) forward++
-            if (backward + 1 + forward > maxConsec) return false
+            const prefGrades = t.preferredGrades ?? []
+            if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
           }
         }
-
-        const slotLabel = `S${si + 1}`
-        if (rule?.avoidSlots?.includes(slotLabel)) return false
-        if (isBlock && rule?.avoidSlots?.includes(`S${si + 2}`)) return false
-
         return true
+      })
+    }
+
+    // State-aware helper functions
+    const isFree = (s: ScheduleState, classKey: ClassKey, day: Day, si: number) =>
+      !s.tables[classKey][day]?.[si]?.subjectId
+
+    const daySubjCount = (s: ScheduleState, classKey: ClassKey, day: Day, subjId: string): number =>
+      s.tables[classKey][day].filter(cell => cell.subjectId === subjId).length
+
+    const isTeacherAvailable = (s: ScheduleState, teacherId: string, day: Day, si: number): boolean => {
+      if (s.teacherOccupied.get(teacherId)?.has(`${day}-${si}`)) return false
+      const teacher = teachers.find(t => t.id === teacherId)
+      if (teacher?.unavailable?.[day]?.includes(`S${si + 1}`)) return false
+      return true
+    }
+
+    const canPlaceWithRules = (s: ScheduleState, classKey: ClassKey, day: Day, si: number, subjId: string, isBlock: boolean) => {
+      const subject = subjects.find(sub => sub.id === subjId)
+      const rule = subject?.rule
+      const addCount = isBlock ? 2 : 1
+
+      const currentDayCount = daySubjCount(s, classKey, day, subjId)
+      const perDayMax = rule?.perDayMax ?? 0
+      if (perDayMax > 0 && currentDayCount + addCount > perDayMax) return false
+
+      const minDays = rule?.minDays ?? 0
+      if (minDays > 0) {
+        const placedUnique = s.placedDays[classKey]?.[subjId]?.size ?? 0
+        const alreadyThisDay = s.placedDays[classKey]?.[subjId]?.has(day)
+        if (!alreadyThisDay && placedUnique < minDays - 1 && currentDayCount > 0) return false
       }
 
-      const recomputeSubjectDays = (classKey: ClassKey, subjId: string) => {
-        const days = new Set<Day>()
-        for (const d of DAYS) {
-          if (workingTables[classKey][d].some(c => c.subjectId === subjId)) days.add(d)
+      const maxConsec = rule?.maxConsecutive ?? 0
+      if (maxConsec > 0) {
+        if (isBlock) {
+          let backward = 0
+          for (let k = si - 1; k >= 0 && s.tables[classKey][day][k]?.subjectId === subjId; k--) backward++
+          let forward = 0
+          for (let k = si + 2; k < slots.length && s.tables[classKey][day][k]?.subjectId === subjId; k++) forward++
+          if (backward + 2 + forward > maxConsec) return false
+        } else {
+          let backward = 0
+          for (let k = si - 1; k >= 0 && s.tables[classKey][day][k]?.subjectId === subjId; k--) backward++
+          let forward = 0
+          for (let k = si + 1; k < slots.length && s.tables[classKey][day][k]?.subjectId === subjId; k++) forward++
+          if (backward + 1 + forward > maxConsec) return false
         }
-        placedDays[classKey][subjId] = days
       }
 
-      const placeCell = (classKey: ClassKey, day: Day, si: number, subjId: string, teacherId: string) => {
-        workingTables[classKey][day][si] = { subjectId: subjId, teacherId }
-        teacherLoad.set(teacherId, (teacherLoad.get(teacherId) ?? 0) + 1)
-        if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
-        teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
-        if (!placedDays[classKey][subjId]) placedDays[classKey][subjId] = new Set<Day>()
-        placedDays[classKey][subjId].add(day)
+      const slotLabel = `S${si + 1}`
+      if (rule?.avoidSlots?.includes(slotLabel)) return false
+      if (isBlock && rule?.avoidSlots?.includes(`S${si + 2}`)) return false
+
+      return true
+    }
+
+    const recomputeSubjectDays = (s: ScheduleState, classKey: ClassKey, subjId: string) => {
+      const days = new Set<Day>()
+      for (const d of DAYS) {
+        if (s.tables[classKey][d].some(c => c.subjectId === subjId)) days.add(d)
       }
+      s.placedDays[classKey][subjId] = days
+    }
 
-      const teacherRandom = new Map(teachers.map(t => [t.id, rng()]))
+    const placeCell = (s: ScheduleState, classKey: ClassKey, day: Day, si: number, subjId: string, teacherId: string) => {
+      s.tables[classKey][day][si] = { subjectId: subjId, teacherId }
+      s.teacherLoad.set(teacherId, (s.teacherLoad.get(teacherId) ?? 0) + 1)
+      if (!s.teacherOccupied.has(teacherId)) s.teacherOccupied.set(teacherId, new Set())
+      s.teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
+      if (!s.placedDays[classKey][subjId]) s.placedDays[classKey][subjId] = new Set<Day>()
+      s.placedDays[classKey][subjId].add(day)
+    }
 
-      const findTeacherForSlot = (subjId: string, gradeId: string, day: Day, si: number) => {
-        const pool = filterAllowedTeachers(teachers, subjId, gradeId)
-        return pickTeacher(pool, teacherLoad, subjId, gradeId, day, si, {
-          commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
-        })
-      }
+    const removeCell = (s: ScheduleState, classKey: ClassKey, day: Day, si: number) => {
+      const cell = s.tables[classKey][day][si]
+      if (!cell?.subjectId || !cell.teacherId) return
+      const teacherId = cell.teacherId
+      const subjId = cell.subjectId
+      s.tables[classKey][day][si] = {}
+      s.teacherLoad.set(teacherId, Math.max(0, (s.teacherLoad.get(teacherId) ?? 0) - 1))
+      s.teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
+      recomputeSubjectDays(s, classKey, subjId)
+    }
 
-      const tryRelocateSingle = (classKey: ClassKey, day: Day, si: number): boolean => {
-        const current = workingTables[classKey][day][si]
-        if (!current?.subjectId || !current.teacherId) return false
-        const subjId = current.subjectId
-        const teacherId = current.teacherId
-        const sameDay = workingTables[classKey][day]
-        if (si + 1 < sameDay.length && sameDay[si + 1]?.subjectId === subjId && sameDay[si + 1]?.teacherId === teacherId) return false
-        if (si - 1 >= 0 && sameDay[si - 1]?.subjectId === subjId && sameDay[si - 1]?.teacherId === teacherId) return false
+    const isPartOfBlock = (s: ScheduleState, classKey: ClassKey, day: Day, si: number): boolean => {
+      const cell = s.tables[classKey][day][si]
+      if (!cell?.subjectId || !cell.teacherId) return false
+      const sameDay = s.tables[classKey][day]
+      if (si + 1 < sameDay.length && sameDay[si + 1]?.subjectId === cell.subjectId && sameDay[si + 1]?.teacherId === cell.teacherId) return true
+      if (si - 1 >= 0 && sameDay[si - 1]?.subjectId === cell.subjectId && sameDay[si - 1]?.teacherId === cell.teacherId) return true
+      return false
+    }
 
-        const teacher = teachers.find(t => t.id === teacherId)
-        for (const d2 of DAYS) {
-          for (let s2 = 0; s2 < slots.length; s2++) {
-            if (d2 === day && s2 === si) continue
-            if (!isFree(classKey, d2, s2)) continue
-            if (!canPlaceWithRules(classKey, d2, s2, subjId, false)) continue
-            const occKey = `${d2}-${s2}`
-            if (teacherOccupied.get(teacherId)?.has(occKey)) continue
-            const blocked = teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)
-            if (blocked) continue
-            workingTables[classKey][d2][s2] = current
-            workingTables[classKey][day][si] = {}
-            teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
-            if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
-            teacherOccupied.get(teacherId)!.add(occKey)
-            recomputeSubjectDays(classKey, subjId)
-            return true
+    // Bir dersi belirli bir slota taşıyabilir miyiz?
+    const canMoveLesson = (s: ScheduleState, classKey: ClassKey, fromDay: Day, fromSi: number, toDay: Day, toSi: number): boolean => {
+      const cell = s.tables[classKey][fromDay][fromSi]
+      if (!cell?.subjectId || !cell.teacherId) return false
+      if (!isFree(s, classKey, toDay, toSi)) return false
+      if (!isTeacherAvailable(s, cell.teacherId, toDay, toSi)) return false
+      if (!canPlaceWithRules(s, classKey, toDay, toSi, cell.subjectId, false)) return false
+      return true
+    }
+
+    const moveLesson = (s: ScheduleState, classKey: ClassKey, fromDay: Day, fromSi: number, toDay: Day, toSi: number): void => {
+      const cell = s.tables[classKey][fromDay][fromSi]
+      if (!cell?.subjectId || !cell.teacherId) return
+      const subjId = cell.subjectId
+      const teacherId = cell.teacherId
+      removeCell(s, classKey, fromDay, fromSi)
+      placeCell(s, classKey, toDay, toSi, subjId, teacherId)
+    }
+
+    type Move = { classKey: ClassKey; fromDay: Day; fromSi: number; toDay: Day; toSi: number }
+
+    const tryToFreeSlot = (s: ScheduleState, classKey: ClassKey, day: Day, si: number, visited: Set<string>, depth: number, moves: Move[]): Move[] | null => {
+      if (depth <= 0) return null
+      const slotKey = `${classKey}-${day}-${si}`
+      if (visited.has(slotKey)) return null
+      visited.add(slotKey)
+
+      if (isFree(s, classKey, day, si)) return moves
+      if (isPartOfBlock(s, classKey, day, si)) return null
+
+      const cell = s.tables[classKey][day][si]
+      if (!cell?.subjectId || !cell.teacherId) return null
+
+      for (const toDay of DAYS) {
+        for (let toSi = 0; toSi < slots.length; toSi++) {
+          if (toDay === day && toSi === si) continue
+          if (canMoveLesson(s, classKey, day, si, toDay, toSi)) {
+            return [...moves, { classKey, fromDay: day, fromSi: si, toDay, toSi }]
           }
         }
-        return false
       }
 
-      const tryChainRelocate = (classKey: ClassKey, day: Day, si: number): boolean => {
-        const current = workingTables[classKey][day][si]
-        if (!current?.subjectId || !current.teacherId) return false
-        const subjId = current.subjectId
-        const teacherId = current.teacherId
-        const sameDay = workingTables[classKey][day]
-        if (si + 1 < sameDay.length && sameDay[si + 1]?.subjectId === subjId && sameDay[si + 1]?.teacherId === teacherId) return false
-        if (si - 1 >= 0 && sameDay[si - 1]?.subjectId === subjId && sameDay[si - 1]?.teacherId === teacherId) return false
+      for (const toDay of DAYS) {
+        for (let toSi = 0; toSi < slots.length; toSi++) {
+          if (toDay === day && toSi === si) continue
+          if (isFree(s, classKey, toDay, toSi)) continue
+          if (isPartOfBlock(s, classKey, toDay, toSi)) continue
 
-        const teacher = teachers.find(t => t.id === teacherId)
-        for (const d2 of DAYS) {
-          for (let s2 = 0; s2 < slots.length; s2++) {
-            if (d2 === day && s2 === si) continue
-            const target = workingTables[classKey][d2][s2]
+          const targetCell = s.tables[classKey][toDay][toSi]
+          if (!targetCell?.subjectId || !targetCell.teacherId) continue
+          if (!isTeacherAvailable(s, cell.teacherId, toDay, toSi)) continue
+          if (!canPlaceWithRules(s, classKey, toDay, toSi, cell.subjectId, false)) continue
 
-            if (!target?.subjectId) {
-              const occKey = `${d2}-${s2}`
-              if (teacherOccupied.get(teacherId)?.has(occKey)) continue
-              const blocked = teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)
-              if (blocked) continue
-              if (!canPlaceWithRules(classKey, d2, s2, subjId, false)) continue
-
-              workingTables[classKey][d2][s2] = current
-              workingTables[classKey][day][si] = {}
-              teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
-              if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
-              teacherOccupied.get(teacherId)!.add(occKey)
-              recomputeSubjectDays(classKey, subjId)
-              return true
-            }
-
-            const targetSubjId = target.subjectId
-            const targetTeacherId = target.teacherId
-            if (!targetTeacherId) continue
-            if (s2 + 1 < sameDay.length && workingTables[classKey][d2][s2 + 1]?.subjectId === targetSubjId) continue
-            if (s2 - 1 >= 0 && workingTables[classKey][d2][s2 - 1]?.subjectId === targetSubjId) continue
-
-            const targetTeacher = teachers.find(t => t.id === targetTeacherId)
-            for (const d3 of DAYS) {
-              for (let s3 = 0; s3 < slots.length; s3++) {
-                if ((d3 === d2 && s3 === s2) || (d3 === day && s3 === si)) continue
-                if (!isFree(classKey, d3, s3)) continue
-                const occKey3 = `${d3}-${s3}`
-                if (teacherOccupied.get(targetTeacherId)?.has(occKey3)) continue
-                const blocked3 = targetTeacher?.unavailable?.[d3]?.includes(`S${s3 + 1}`)
-                if (blocked3) continue
-                if (!canPlaceWithRules(classKey, d3, s3, targetSubjId, false)) continue
-
-                const occKey2 = `${d2}-${s2}`
-                if (teacherOccupied.get(teacherId)?.has(occKey2)) continue
-                const blocked2 = teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)
-                if (blocked2) continue
-                if (!canPlaceWithRules(classKey, d2, s2, subjId, false)) continue
-
-                workingTables[classKey][d3][s3] = target
-                teacherOccupied.get(targetTeacherId)?.delete(`${d2}-${s2}`)
-                if (!teacherOccupied.has(targetTeacherId)) teacherOccupied.set(targetTeacherId, new Set())
-                teacherOccupied.get(targetTeacherId)!.add(occKey3)
-
-                workingTables[classKey][d2][s2] = current
-                teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
-                if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
-                teacherOccupied.get(teacherId)!.add(occKey2)
-
-                workingTables[classKey][day][si] = {}
-
-                recomputeSubjectDays(classKey, subjId)
-                recomputeSubjectDays(classKey, targetSubjId)
-                return true
-              }
-            }
+          const subMoves = tryToFreeSlot(s, classKey, toDay, toSi, new Set(visited), depth - 1, [])
+          if (subMoves) {
+            return [...subMoves, { classKey, fromDay: day, fromSi: si, toDay, toSi }]
           }
         }
-        return false
       }
+      return null
+    }
 
-      for (let pass = 0; pass < 5; pass++) {
-        let progress = false
-        const dayOrderLocal = shuffleInPlace([...DAYS], rng)
-        const slotOrderLocal = shuffleInPlace(Array.from({ length: slots.length }, (_, i) => i), rng)
+    const applyMoves = (s: ScheduleState, moves: Move[]): void => {
+      for (const move of moves) {
+        moveLesson(s, move.classKey, move.fromDay, move.fromSi, move.toDay, move.toSi)
+      }
+    }
 
-        for (const c of classes) {
-          const gradeId = c.grade
-          const currentCounts: Record<string, number> = {}
-          for (const day of DAYS) {
-            for (const cell of workingTables[c.key][day]) {
-              if (cell?.subjectId) currentCounts[cell.subjectId] = (currentCounts[cell.subjectId] ?? 0) + 1
-            }
+    const tryToFreeTeacher = (s: ScheduleState, teacherId: string, day: Day, si: number, depth: number): Move[] | null => {
+      if (depth <= 0) return null
+      for (const c of classes) {
+        const cell = s.tables[c.key][day][si]
+        if (cell?.teacherId === teacherId && cell?.subjectId) {
+          const moves = tryToFreeSlot(s, c.key, day, si, new Set(), depth, [])
+          if (moves) return moves
+        }
+      }
+      return null
+    }
+
+    // Eksik dersleri topla
+    type MissingLesson = { classKey: ClassKey; gradeId: string; subjId: string; subjName: string }
+    const getMissingLessons = (s: ScheduleState): MissingLesson[] => {
+      const missing: MissingLesson[] = []
+      for (const c of classes) {
+        const counts: Record<string, number> = {}
+        for (const day of DAYS) {
+          for (const cell of s.tables[c.key][day]) {
+            if (cell?.subjectId) counts[cell.subjectId] = (counts[cell.subjectId] ?? 0) + 1
           }
+        }
+        for (const subj of subjects) {
+          const needed = subj.weeklyHoursByGrade[c.grade] ?? 0
+          const have = counts[subj.id] ?? 0
+          const miss = needed - have
+          for (let i = 0; i < miss; i++) {
+            missing.push({ classKey: c.key, gradeId: c.grade, subjId: subj.id, subjName: subj.name })
+          }
+        }
+      }
+      return missing
+    }
 
-          for (const s of subjects) {
-            const totalNeeded = s.weeklyHoursByGrade[gradeId] ?? 0
-            if (totalNeeded <= 0) continue
-            let missing = totalNeeded - (currentCounts[s.id] ?? 0)
-            if (missing <= 0) continue
+    // Bir dersin kaç geçerli yerleştirme seçeneği var? (MRV için)
+    type PlacementOption = { day: Day; si: number; teacherId: string; moves: Move[] }
+    const getPlacementOptions = (s: ScheduleState, lesson: MissingLesson, maxDepth: number): PlacementOption[] => {
+      const options: PlacementOption[] = []
+      const eligibleTeachers = filterAllowedTeachers(teachers, lesson.subjId, lesson.gradeId)
 
-            const isMandatory = isMandatoryBlock(s, gradeId)
+      for (const day of DAYS) {
+        for (let si = 0; si < slots.length; si++) {
+          if (!canPlaceWithRules(s, lesson.classKey, day, si, lesson.subjId, false)) continue
 
-            if (isMandatory) {
-              while (missing >= 2) {
-                let placed = false
-                for (const day of dayOrderLocal) {
-                  if (placed) break
-                  for (const si of slotOrderLocal.filter(i => i < slots.length - 1)) {
-                    if (!isFree(c.key, day, si) || !isFree(c.key, day, si + 1)) continue
-                    if (!canPlaceWithRules(c.key, day, si, s.id, true)) continue
-                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
-                    if (!teacherId) continue
-                    const slotKey2 = `${day}-${si + 1}`
-                    if (teacherOccupied.get(teacherId)?.has(slotKey2)) continue
-                    const teacher = teachers.find(t => t.id === teacherId)
-                    if (teacher?.unavailable?.[day]?.includes(`S${si + 2}`)) continue
-                    placeCell(c.key, day, si, s.id, teacherId)
-                    placeCell(c.key, day, si + 1, s.id, teacherId)
-                    missing -= 2
-                    currentCounts[s.id] = (currentCounts[s.id] ?? 0) + 2
-                    placed = true
-                    progress = true
-                    break
-                  }
-                }
-                if (!placed) break
+          for (const teacher of eligibleTeachers) {
+            const currentLoad = s.teacherLoad.get(teacher.id) ?? 0
+            if (teacher.maxHours && currentLoad >= teacher.maxHours) continue
+
+            // DURUM 1: Slot boş ve öğretmen müsait
+            if (isFree(s, lesson.classKey, day, si) && isTeacherAvailable(s, teacher.id, day, si)) {
+              options.push({ day, si, teacherId: teacher.id, moves: [] })
+              continue
+            }
+
+            // DURUM 2: Slot boş ama öğretmen meşgul
+            if (isFree(s, lesson.classKey, day, si) && !isTeacherAvailable(s, teacher.id, day, si)) {
+              const moves = tryToFreeTeacher(s, teacher.id, day, si, maxDepth)
+              if (moves) {
+                options.push({ day, si, teacherId: teacher.id, moves })
               }
               continue
             }
 
-            while (missing > 0) {
-              let placed = false
-              for (const day of dayOrderLocal) {
-                if (placed) break
-                for (const si of slotOrderLocal) {
-                  if (isFree(c.key, day, si)) {
-                    if (!canPlaceWithRules(c.key, day, si, s.id, false)) continue
-                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
-                    if (!teacherId) continue
-                    placeCell(c.key, day, si, s.id, teacherId)
-                    missing -= 1
-                    currentCounts[s.id] = (currentCounts[s.id] ?? 0) + 1
-                    placed = true
-                    progress = true
-                    break
-                  }
-
-                  if (tryRelocateSingle(c.key, day, si)) {
-                    if (!canPlaceWithRules(c.key, day, si, s.id, false)) continue
-                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
-                    if (!teacherId) continue
-                    placeCell(c.key, day, si, s.id, teacherId)
-                    missing -= 1
-                    currentCounts[s.id] = (currentCounts[s.id] ?? 0) + 1
-                    placed = true
-                    progress = true
-                    break
-                  }
-
-                  if (tryChainRelocate(c.key, day, si)) {
-                    if (!canPlaceWithRules(c.key, day, si, s.id, false)) continue
-                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
-                    if (!teacherId) continue
-                    placeCell(c.key, day, si, s.id, teacherId)
-                    missing -= 1
-                    currentCounts[s.id] = (currentCounts[s.id] ?? 0) + 1
-                    placed = true
-                    progress = true
-                    break
+            // DURUM 3: Slot dolu
+            if (!isFree(s, lesson.classKey, day, si)) {
+              const slotMoves = tryToFreeSlot(s, lesson.classKey, day, si, new Set(), maxDepth, [])
+              if (slotMoves) {
+                // Slot boşaltıldıktan sonra öğretmen müsait olacak mı?
+                const tempState = cloneState(s)
+                applyMoves(tempState, slotMoves)
+                if (isTeacherAvailable(tempState, teacher.id, day, si)) {
+                  options.push({ day, si, teacherId: teacher.id, moves: slotMoves })
+                } else {
+                  // Öğretmeni de serbest bırakmayı dene
+                  const teacherMoves = tryToFreeTeacher(tempState, teacher.id, day, si, maxDepth - slotMoves.length)
+                  if (teacherMoves) {
+                    options.push({ day, si, teacherId: teacher.id, moves: [...slotMoves, ...teacherMoves] })
                   }
                 }
               }
-              if (!placed) break
             }
           }
         }
-        if (!progress) break
+      }
+      return options
+    }
+
+    // MRV: En kısıtlı dersi seç (en az seçeneği olan)
+    const selectMostConstrainedLesson = (s: ScheduleState, lessons: MissingLesson[], maxDepth: number): { lesson: MissingLesson; options: PlacementOption[] } | null => {
+      let bestLesson: MissingLesson | null = null
+      let bestOptions: PlacementOption[] = []
+      let minOptions = Infinity
+
+      for (const lesson of lessons) {
+        const options = getPlacementOptions(s, lesson, maxDepth)
+        if (options.length === 0) {
+          // Bu ders yerleştirilemez - hemen fail
+          return { lesson, options: [] }
+        }
+        if (options.length < minOptions) {
+          minOptions = options.length
+          bestLesson = lesson
+          bestOptions = options
+        }
       }
 
-      const totalMissing = classes.reduce((sum, c) => {
-        return sum + calculateDeficits(c, workingTables[c.key], subjects).reduce((s, d) => s + d.missing, 0)
-      }, 0)
-      return { tables: workingTables, totalMissing }
+      return bestLesson ? { lesson: bestLesson, options: bestOptions } : null
     }
 
-    let best = {
-      tables,
-      totalMissing: classes.reduce((sum, c) => sum + calculateDeficits(c, tables[c.key], subjects).reduce((s, d) => s + d.missing, 0), 0),
-    }
+    // Ana istatistikler
+    const initialMissing = classes.reduce((sum, c) => sum + calculateDeficits(c, tables[c.key], subjects).reduce((s, d) => s + d.missing, 0), 0)
+    setRepairStats({ attempt: 0, missing: initialMissing, best: initialMissing })
+    setRepairLog([`Başlangıç: ${initialMissing} eksik ders (global backtracking)`])
+
+    let attemptCount = 0
+    let bestMissing = initialMissing
+    let bestState: ScheduleState | null = null
     const start = performance.now()
-    let seed = 1
+    const MAX_DEPTH = 8
 
-    const tick = () => {
+    // ═══════════════════════════════════════════════════════════════════════
+    // GLOBAL BACKTRACKING SOLVE
+    // Tüm eksik dersleri rekürsif olarak yerleştirmeye çalışır
+    // Bir ders yerleştirilemezse, önceki yerleştirmeleri geri alır ve farklı seçenekler dener
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const solve = (s: ScheduleState, depth: number, logPrefix: string): boolean => {
+      attemptCount++
       const now = performance.now()
-      if (best.totalMissing === 0) {
-        setTables(best.tables)
-        setIsRepairing(false)
-        return
-      }
-      if (now - start > 30000) {
-        setTables(best.tables)
-        setIsRepairing(false)
-        return
+
+      // Timeout kontrolü
+      if (now - start > 30000) return false // 30 saniye
+
+      const missing = getMissingLessons(s)
+
+      // En iyi sonucu kaydet
+      if (missing.length < bestMissing) {
+        bestMissing = missing.length
+        bestState = cloneState(s)
+        setRepairLog(prev => [...prev.slice(-9), `${logPrefix}Yeni en iyi: ${missing.length} eksik kaldı`])
+        setRepairStats({ attempt: attemptCount, missing: missing.length, best: bestMissing })
+        setTables({ ...s.tables })
+        const changed = detectChangedCells(tables, s.tables)
+        setChangedCells(changed)
       }
 
-      for (let i = 0; i < 6; i++) {
-        const res = runRepairOnce(Date.now() + seed * 97)
-        seed += 1
-        setTables(res.tables)
-        if (res.totalMissing < best.totalMissing) best = res
-        if (best.totalMissing === 0) break
+      // Çözüm bulundu
+      if (missing.length === 0) {
+        setRepairLog(prev => [...prev.slice(-9), `${logPrefix}ÇÖZÜM BULUNDU!`])
+        return true
       }
 
-      window.setTimeout(tick, 0)
+      // Derinlik sınırı
+      if (depth <= 0) return false
+
+      // En kısıtlı dersi seç
+      const selection = selectMostConstrainedLesson(s, missing, MAX_DEPTH)
+      if (!selection || selection.options.length === 0) {
+        // Bu dalda çözüm yok
+        return false
+      }
+
+      const { lesson, options } = selection
+
+      // Her yerleştirme seçeneğini dene
+      for (let i = 0; i < options.length; i++) {
+        const option = options[i]
+
+        // UI güncellemesi (her 100 denemede bir)
+        if (attemptCount % 100 === 0) {
+          setRepairLog(prev => [...prev.slice(-9), `${logPrefix}${lesson.classKey} ${lesson.subjName} deneniyor (${i + 1}/${options.length})...`])
+          setRepairStats({ attempt: attemptCount, missing: missing.length, best: bestMissing })
+        }
+
+        // Mevcut state'i kaydet
+        const snapshot = cloneState(s)
+
+        // Taşımaları uygula ve dersi yerleştir
+        applyMoves(s, option.moves)
+        placeCell(s, lesson.classKey, option.day, option.si, lesson.subjId, option.teacherId)
+
+        // Rekürsif olarak kalan dersleri yerleştir
+        if (solve(s, depth - 1, logPrefix + '  ')) {
+          return true // Çözüm bulundu!
+        }
+
+        // Çözüm bulunamadı, state'i geri yükle (backtrack)
+        restoreState(s, snapshot)
+      }
+
+      return false
     }
 
-    window.setTimeout(tick, 0)
+    // Asenkron başlat
+    const runAsync = () => {
+      // İlk olarak basit greedy ile dene
+      setRepairLog(prev => [...prev.slice(-9), 'Adım 1: Greedy yerleştirme...'])
+
+      let greedyPlaced = 0
+      let progress = true
+      while (progress) {
+        progress = false
+        const missing = getMissingLessons(state)
+        for (const lesson of missing) {
+          const options = getPlacementOptions(state, lesson, MAX_DEPTH)
+          if (options.length > 0) {
+            // En az taşıma gerektiren seçeneği al
+            options.sort((a, b) => a.moves.length - b.moves.length)
+            const best = options[0]
+            applyMoves(state, best.moves)
+            placeCell(state, lesson.classKey, best.day, best.si, lesson.subjId, best.teacherId)
+            greedyPlaced++
+            progress = true
+            break
+          }
+        }
+      }
+
+      const remainingAfterGreedy = getMissingLessons(state).length
+      setRepairLog(prev => [...prev.slice(-9), `Greedy: ${greedyPlaced} yerleşti, ${remainingAfterGreedy} kaldı`])
+      setTables({ ...state.tables })
+
+      if (remainingAfterGreedy === 0) {
+        setRepairLog(prev => [...prev.slice(-9), 'Tüm dersler yerleştirildi!'])
+        setRepairStats({ attempt: attemptCount, missing: 0, best: 0 })
+        const changed = detectChangedCells(tables, state.tables)
+        setChangedCells(changed)
+        setIsRepairing(false)
+        return
+      }
+
+      // Greedy yetmedi, sistematik yerleştirme ile devam et
+      setRepairLog(prev => [...prev.slice(-9), 'Adım 2: Sistematik yerleştirme başlıyor...'])
+      bestMissing = remainingAfterGreedy
+      bestState = cloneState(state)
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // SİSTEMATİK YERLEŞTİRME: Her sınıf için eksik dersleri sırayla yerleştir
+      // Takılınca farklı stratejiler dene
+      // ═══════════════════════════════════════════════════════════════════════
+
+      let iterationCount = 0
+      const MAX_ITERATIONS = 1000
+
+      // Strateji 1: Önce en kolay dersler (en çok seçenek)
+      // Strateji 2: Önce en zor dersler (en az seçenek - MRV)
+      // Strateji 3: Sınıf sırasıyla
+      let currentStrategy = 0
+      const strategies = ['easy-first', 'hard-first', 'by-class'] as const
+
+      const sortMissingByStrategy = (missing: MissingLesson[], strategy: typeof strategies[number]): MissingLesson[] => {
+        if (strategy === 'by-class') {
+          return [...missing].sort((a, b) => a.classKey.localeCompare(b.classKey))
+        }
+        // easy-first ve hard-first için seçenek sayısına göre sırala
+        const withOptions = missing.map(m => ({
+          lesson: m,
+          optCount: getPlacementOptions(state, m, MAX_DEPTH).length
+        }))
+        if (strategy === 'easy-first') {
+          withOptions.sort((a, b) => b.optCount - a.optCount)
+        } else {
+          withOptions.sort((a, b) => a.optCount - b.optCount)
+        }
+        return withOptions.map(w => w.lesson)
+      }
+
+      const processStep = () => {
+        iterationCount++
+
+        // Timeout veya iterasyon limiti
+        if (performance.now() - start > 30000 || iterationCount > MAX_ITERATIONS) {
+          setRepairLog(prev => [...prev.slice(-9), `Limit aşıldı. En iyi: ${bestMissing} eksik`])
+          if (bestState) {
+            restoreState(state, bestState)
+            setTables({ ...bestState.tables })
+          }
+          setRepairStats({ attempt: attemptCount, missing: bestMissing, best: bestMissing })
+          setChangedCells(detectChangedCells(tables, bestState?.tables ?? state.tables))
+          setIsRepairing(false)
+          return
+        }
+
+        const missing = getMissingLessons(state)
+
+        // Çözüm bulundu!
+        if (missing.length === 0) {
+          setRepairLog(prev => [...prev.slice(-9), 'TÜM DERSLER YERLEŞTİRİLDİ!'])
+          setRepairStats({ attempt: attemptCount, missing: 0, best: 0 })
+          setTables({ ...state.tables })
+          setChangedCells(detectChangedCells(tables, state.tables))
+          setIsRepairing(false)
+          return
+        }
+
+        // En iyi sonucu kaydet
+        if (missing.length < bestMissing) {
+          bestMissing = missing.length
+          bestState = cloneState(state)
+          setRepairLog(prev => [...prev.slice(-9), `Yeni en iyi: ${missing.length} eksik kaldı`])
+          setTables({ ...state.tables })
+          setRepairStats({ attempt: attemptCount, missing: missing.length, best: bestMissing })
+        }
+
+        // Mevcut stratejiyle sırala
+        const sortedMissing = sortMissingByStrategy(missing, strategies[currentStrategy])
+
+        // Tüm eksik dersleri tek tek dene
+        let placedAny = false
+        for (const lesson of sortedMissing) {
+          const options = getPlacementOptions(state, lesson, MAX_DEPTH)
+
+          if (options.length > 0) {
+            // En az taşıma gerektiren seçeneği al
+            options.sort((a, b) => a.moves.length - b.moves.length)
+            const best = options[0]
+            applyMoves(state, best.moves)
+            placeCell(state, lesson.classKey, best.day, best.si, lesson.subjId, best.teacherId)
+            attemptCount++
+            placedAny = true
+
+            setRepairLog(prev => [...prev.slice(-9), `✓ ${lesson.classKey} ${lesson.subjName} → ${best.day} S${best.si + 1}`])
+            break
+          }
+        }
+
+        if (!placedAny) {
+          // Hiçbir ders yerleştirilemedi, strateji değiştir
+          currentStrategy = (currentStrategy + 1) % strategies.length
+
+          if (currentStrategy === 0) {
+            // Tüm stratejiler denendi, en iyi sonucu göster
+            setRepairLog(prev => [...prev.slice(-9), `Strateji tükendi. Kalan: ${missing.length} eksik`])
+
+            // Son çare: Mevcut en iyi state'e dön
+            if (bestState) {
+              restoreState(state, bestState)
+              setTables({ ...bestState.tables })
+            }
+            setRepairStats({ attempt: attemptCount, missing: bestMissing, best: bestMissing })
+            setChangedCells(detectChangedCells(tables, bestState?.tables ?? state.tables))
+            setIsRepairing(false)
+            return
+          }
+
+          setRepairLog(prev => [...prev.slice(-9), `Strateji değişti: ${strategies[currentStrategy]}`])
+          // En iyi state'e dön ve yeni stratejiyle başla
+          if (bestState) {
+            restoreState(state, bestState)
+          }
+        }
+
+        // UI güncellemesi
+        setTables({ ...state.tables })
+        setRepairStats({ attempt: attemptCount, missing: getMissingLessons(state).length, best: bestMissing })
+        window.setTimeout(processStep, 10)
+      }
+
+      window.setTimeout(processStep, 10)
+    }
+
+    window.setTimeout(runAsync, 50)
   }
 
   const generate = () => {
@@ -1586,10 +1873,12 @@ export default function DersProgramlari() {
                               const cell = tables[c.key]?.[d]?.[si]
                               const subj = subjects.find(s => s.id === cell?.subjectId)
                               const teacher = teachers.find(t => t.id === cell?.teacherId)
+                              const cellKey = `${c.key}-${d}-${si}`
+                              const isChanged = changedCells.has(cellKey)
                               return (
-                                <td key={c.key + d + si} className="slot">
+                                <td key={c.key + d + si} className={`slot ${isChanged ? 'cell-changed' : ''}`} style={isChanged ? { animation: 'cellPulse 0.6s ease-out' } : undefined}>
                                   {cell?.subjectId ? (
-                                    <div className="slot-pill" title={`${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}`}>
+                                    <div className="slot-pill" title={`${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}`} style={isChanged ? { background: 'rgba(34, 197, 94, 0.3)', boxShadow: '0 0 8px rgba(34, 197, 94, 0.5)' } : undefined}>
                                       <span className="dot" style={{ background: subj?.color ?? '#93c5fd' }} />
                                       <span className="s-name">{getSubjectAbbreviation(subj?.name || '', subj?.abbreviation)}</span>
                                       <span className="s-teacher">{teacher ? getTeacherAbbreviation(teacher.name) : '—'}</span>
@@ -1615,8 +1904,10 @@ export default function DersProgramlari() {
                               const cell = tables[c.key]?.[d]?.[si]
                               const subj = subjects.find(s => s.id === cell?.subjectId)
                               const teacher = teachers.find(t => t.id === cell?.teacherId)
+                              const cellKey = `${c.key}-${d}-${si}`
+                              const isChanged = changedCells.has(cellKey)
                               return (
-                                <div key={c.key + d + 'a' + si} className="acc-slot">
+                                <div key={c.key + d + 'a' + si} className="acc-slot" style={isChanged ? { background: 'rgba(34, 197, 94, 0.2)', animation: 'cellPulse 0.6s ease-out' } : undefined}>
                                   <div className="acc-slot-left">S{si + 1}</div>
                                   {cell?.subjectId ? (
                                     <div className="acc-slot-main">
@@ -1652,9 +1943,30 @@ export default function DersProgramlari() {
               onClick={repairMissing}
               disabled={isGenerating || isRepairing}
             >
-              Yerleştir
+              {isRepairing ? 'Yerleştiriliyor…' : 'Yerleştir'}
             </button>
+            {repairStats && isRepairing && (
+              <span style={{ color: '#60a5fa', fontWeight: 500 }}>
+                Deneme #{repairStats.attempt} | Şu an: {repairStats.missing} | En iyi: {repairStats.best}
+              </span>
+            )}
           </div>
+          {isRepairing && repairLog.length > 0 && (
+            <div style={{
+              background: 'rgba(0,0,0,0.3)',
+              padding: '8px 12px',
+              borderRadius: 6,
+              marginBottom: 8,
+              maxHeight: 120,
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              fontSize: 11
+            }}>
+              {repairLog.map((log, idx) => (
+                <div key={idx} style={{ opacity: idx === repairLog.length - 1 ? 1 : 0.6 }}>{log}</div>
+              ))}
+            </div>
+          )}
           {classDeficits.map(item => (
             <div key={item.classKey} style={{ marginBottom: 4 }}>
               <span style={{ fontWeight: 600 }}>{item.classKey}:</span>{' '}
@@ -1891,16 +2203,6 @@ function pickTeacher(
     }
   }
   return pick.id
-}
-
-function mulberry32(seed: number): () => number {
-  let t = seed >>> 0
-  return () => {
-    t += 0x6D2B79F5
-    let r = Math.imul(t ^ (t >>> 15), t | 1)
-    r ^= r + Math.imul(r ^ (r >>> 7), r | 61)
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
-  }
 }
 
 // shortName removed (show full name under subject)
