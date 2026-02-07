@@ -50,7 +50,12 @@ export function useSubjects() {
 
   const add = useCallback((s: Omit<Subject, 'id'>) => {
     const subject: Subject = { ...s, id: genId() }
-    setSubjects((prev) => [...prev, subject])
+    setSubjects((prev) => {
+      // Aynı isimde ders varsa ekleme
+      const exists = prev.some(existing => existing.name.toLowerCase().trim() === s.name.toLowerCase().trim())
+      if (exists) return prev
+      return [...prev, subject]
+    })
     return subject
   }, [setSubjects])
 
@@ -73,10 +78,12 @@ export function useSubjects() {
         name: tpl.name,
         abbreviation: tpl.abbreviation,
         weeklyHoursByGrade: tpl.weeklyHoursByGrade,
+        priority: true,
         rule: {
           perDayMax: 0, // sınıfın ihtiyacını tamamlamak için gün başına sınır yok
           maxConsecutive: isBeden ? 3 : 3,
-          preferBlockScheduling: isBeden || lower.includes('seçmeli'), // beden zorunlu, seçmeliler mümkünse blok
+          minDays: 0,
+          preferBlockScheduling: isBeden, // varsayılan olarak blok kapalı; sadece beden açık
           avoidSlots: isRehberlik ? ['S1'] : [], // rehberlik ilk saat olmasın; diğerleri serbest
         },
       }

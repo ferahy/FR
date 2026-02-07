@@ -20,6 +20,7 @@ type FormState = {
   maxConsecutive: string
   minDays: string
   preferBlockScheduling: boolean
+  priority: boolean
   avoidSlots: string[]
   color: string
 }
@@ -74,6 +75,7 @@ export default function Dersler() {
       weeklyHoursByGrade: Object.fromEntries(
         Object.entries(data.weeklyHoursByGrade).map(([k, v]) => [k, data.enabledByGrade[k] ? Math.max(1, toInt(v)) : 0])
       ),
+      priority: data.priority,
       rule: {
         perDayMax: data.perDayMax ? Math.max(0, toInt(data.perDayMax)) : 0,
         maxConsecutive: data.maxConsecutive ? Math.max(0, toInt(data.maxConsecutive)) : 0,
@@ -282,7 +284,8 @@ function SubjectModal({
     perDayMax: init?.rule?.perDayMax ? String(init.rule.perDayMax) : '0',
     maxConsecutive: init?.rule?.maxConsecutive ? String(init.rule.maxConsecutive) : '0',
     minDays: init?.rule?.minDays ? String(init.rule.minDays) : '0',
-    preferBlockScheduling: init?.rule?.preferBlockScheduling ?? true,
+    preferBlockScheduling: init?.rule?.preferBlockScheduling ?? false,
+    priority: init?.priority ?? true,
     avoidSlots: init?.rule?.avoidSlots ?? [],
     color: init?.color ?? '#93c5fd',
   })
@@ -413,7 +416,15 @@ function SubjectModal({
             ref={nameRef}
             className={`input ${errors.name ? 'field-error' : ''}`}
             value={state.name}
-            onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
+            onChange={(e) => {
+              const nextName = e.target.value
+              const shouldPreferBlock = nextName.toLocaleLowerCase('tr-TR').includes('beden')
+              setState((s) => ({
+                ...s,
+                name: nextName,
+                preferBlockScheduling: shouldPreferBlock ? true : s.preferBlockScheduling,
+              }))
+            }}
             aria-invalid={!!errors.name}
             aria-describedby={errors.name ? 'err-name' : undefined}
             placeholder="örn. Matematik"
@@ -603,6 +614,18 @@ function SubjectModal({
           </div>
         </div>
 
+        <div className="field-row">
+          <div className="field" style={{ flex: '1 1 240px' }}>
+            <span className="field-label">Öncelik</span>
+            <div className="help-text" style={{ marginTop: 4 }}>
+              <strong>Bilgi:</strong> Önceliksiz dersler en sona bırakılır; arka arkaya gelmesi gerekmez.
+            </div>
+            <div className="segmented" role="group" aria-label="Öncelik modu">
+              <button type="button" className={"seg " + (!state.priority ? 'active blocked' : '')} aria-pressed={!state.priority} onClick={() => setState((s) => ({ ...s, priority: false }))}>Önceliksiz</button>
+              <button type="button" className={"seg " + (state.priority ? 'active free' : '')} aria-pressed={state.priority} onClick={() => setState((s) => ({ ...s, priority: true }))}>Öncelikli</button>
+            </div>
+          </div>
+        </div>
         <div className="field-row">
           <div className="field" style={{ flex: '1 1 240px' }}>
             <span className="field-label">Aynı Gün Blok Yerleştirme</span>
