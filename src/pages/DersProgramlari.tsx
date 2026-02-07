@@ -1468,9 +1468,8 @@ export default function DersProgramlari() {
     const getGradeOfClass = (ck: string) => ck.split('-')[0]
 
     for (const item of classDeficits) {
-      const classKey = item.classKey
-      const gradeId = getGradeOfClass(classKey)
-      const schedule = tables[classKey]
+      const gradeId = getGradeOfClass(item.classKey)
+      const schedule = tables[item.classKey]
       if (!schedule) continue
 
       const emptySlots: { day: Day; si: number }[] = []
