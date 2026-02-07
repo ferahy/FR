@@ -1506,18 +1506,18 @@ export default function DersProgramlari() {
 
             // Eğer sadece uygunluk yüzünden bloklanmışsa öner
             if (unavailable && !busy) {
-              const key = `${classKey}-${subj.id}-${teacher.id}-${slot.day}-${slot.si}-unavail`
+              const key = `${item.classKey}-${subj.id}-${teacher.id}-${slot.day}-${slot.si}-unavail`
               if (!seen.has(key)) {
-                suggestions.push(`${classKey} ${subj.name}: ${teacher.name} için ${slot.day} S${slot.si + 1} açılırsa yerleşebilir.`)
+                suggestions.push(`${item.classKey} ${subj.name}: ${teacher.name} için ${slot.day} S${slot.si + 1} açılırsa yerleşebilir.`)
                 seen.add(key)
               }
             }
 
             // Çakışma varsa bilgi ver
             if (!unavailable && busy) {
-              const key = `${classKey}-${subj.id}-${teacher.id}-${slot.day}-${slot.si}-busy`
+              const key = `${item.classKey}-${subj.id}-${teacher.id}-${slot.day}-${slot.si}-busy`
               if (!seen.has(key)) {
-                suggestions.push(`${classKey} ${subj.name}: ${teacher.name} aynı saatte başka sınıfta ( ${slot.day} S${slot.si + 1} ). Bu saat boşaltılırsa yerleşebilir.`)
+                suggestions.push(`${item.classKey} ${subj.name}: ${teacher.name} aynı saatte başka sınıfta ( ${slot.day} S${slot.si + 1} ). Bu saat boşaltılırsa yerleşebilir.`)
                 seen.add(key)
               }
             }
