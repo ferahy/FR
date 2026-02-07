@@ -1141,7 +1141,7 @@ export default function DersProgramlari() {
 
       const teacherRandom = new Map(teachers.map(t => [t.id, rng()]))
 
-      const findTeacherForSlot = (classKey: ClassKey, subjId: string, gradeId: string, day: Day, si: number) => {
+      const findTeacherForSlot = (subjId: string, gradeId: string, day: Day, si: number) => {
         const pool = filterAllowedTeachers(teachers, subjId, gradeId)
         return pickTeacher(pool, teacherLoad, subjId, gradeId, day, si, {
           commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
@@ -1285,7 +1285,7 @@ export default function DersProgramlari() {
                   for (const si of slotOrderLocal.filter(i => i < slots.length - 1)) {
                     if (!isFree(c.key, day, si) || !isFree(c.key, day, si + 1)) continue
                     if (!canPlaceWithRules(c.key, day, si, s.id, true)) continue
-                    const teacherId = findTeacherForSlot(c.key, s.id, gradeId, day, si)
+                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
                     if (!teacherId) continue
                     const slotKey2 = `${day}-${si + 1}`
                     if (teacherOccupied.get(teacherId)?.has(slotKey2)) continue
@@ -1312,7 +1312,7 @@ export default function DersProgramlari() {
                 for (const si of slotOrderLocal) {
                   if (isFree(c.key, day, si)) {
                     if (!canPlaceWithRules(c.key, day, si, s.id, false)) continue
-                    const teacherId = findTeacherForSlot(c.key, s.id, gradeId, day, si)
+                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
                     if (!teacherId) continue
                     placeCell(c.key, day, si, s.id, teacherId)
                     missing -= 1
@@ -1324,7 +1324,7 @@ export default function DersProgramlari() {
 
                   if (tryRelocateSingle(c.key, day, si)) {
                     if (!canPlaceWithRules(c.key, day, si, s.id, false)) continue
-                    const teacherId = findTeacherForSlot(c.key, s.id, gradeId, day, si)
+                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
                     if (!teacherId) continue
                     placeCell(c.key, day, si, s.id, teacherId)
                     missing -= 1
@@ -1336,7 +1336,7 @@ export default function DersProgramlari() {
 
                   if (tryChainRelocate(c.key, day, si)) {
                     if (!canPlaceWithRules(c.key, day, si, s.id, false)) continue
-                    const teacherId = findTeacherForSlot(c.key, s.id, gradeId, day, si)
+                    const teacherId = findTeacherForSlot(s.id, gradeId, day, si)
                     if (!teacherId) continue
                     placeCell(c.key, day, si, s.id, teacherId)
                     missing -= 1
