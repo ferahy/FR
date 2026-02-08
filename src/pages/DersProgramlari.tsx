@@ -1108,7 +1108,13 @@ export default function DersProgramlari() {
     setTables(best.tables)
     let seed = 1
     let tried = 1
-    const triedResults = new Map<number, number>() // seed hash -> totalMissing (to avoid exact repeats)
+    const seenSignatures = new Set<string>() // deficit imzaları; aynı eksik desenini tekrar denememek için
+    const makeSignature = (defs: { classKey: string; deficits: { name: string; missing: number }[] }[]) => {
+      return defs
+        .map(d => `${d.classKey}:${d.deficits.map(x => `${x.name}:${x.missing}`).join('|')}`)
+        .sort()
+        .join('||')
+    }
 
     const tick = () => {
       // Durdurma kontrolü
@@ -1159,14 +1165,15 @@ export default function DersProgramlari() {
         seed += 1
         tried += 1
 
-        // Aynı seed hash'i daha önce denenmişse atla
-        const seedHash = currentSeed % 1000000
-        if (triedResults.has(seedHash)) {
+        const res = runOnce(currentSeed)
+
+        // Aynı eksik deseniyle sonuç veren denemeleri atla
+        const signature = makeSignature(res.deficits)
+        if (seenSignatures.has(signature)) {
           continue
         }
+        seenSignatures.add(signature)
 
-        const res = runOnce(currentSeed)
-        triedResults.set(seedHash, res.totalMissing)
         setTables(res.tables)
         setTriedCount(tried)
 
