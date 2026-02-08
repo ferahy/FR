@@ -259,19 +259,25 @@ export default function DersProgramlari() {
         })
       }
 
-      // Aynı sınıf seviyesinde farklı şubelere farklı öğretmen atamaya çalış
+      // Aynı sınıf seviyesinde farklı şubelere farklı öğretmen atamaya zorla
       const gsKey = `${gradeId}|${subjId}`
       const alreadyAssigned = gradeSubjectAssignedTeachers.get(gsKey)
+      const totalEligible = pool.length
+      const assignedCount = alreadyAssigned?.size ?? 0
 
-      // Henüz bu sınıf seviyesi+ders'e atanmamış öğretmenleri öncelikle dene
-      if (alreadyAssigned && alreadyAssigned.size > 0) {
-        const unassignedPool = pool.filter(t => !alreadyAssigned.has(t.id))
-        if (unassignedPool.length > 0) {
-          const result = pickTeacher(unassignedPool, teacherLoad, subjId, gradeId, day, si, {
-            commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
-          })
-          if (result) return result
+      // Eğer birden fazla uygun öğretmen varsa, henüz atanmamış olanı zorunlu kıl
+      if (totalEligible > assignedCount) {
+        const unassignedPool = pool.filter(t => !alreadyAssigned?.has(t.id))
+        if (unassignedPool.length === 0) {
+          // henüz kullanılmamış kimse kalmadı, ama teoride olmamalı
+          return undefined
         }
+        const result = pickTeacher(unassignedPool, teacherLoad, subjId, gradeId, day, si, {
+          commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
+        })
+        if (result) return result
+        // hiçbiri uygun slot bulamadıysa bu adımda yerleştirmeyi iptal et
+        return undefined
       }
 
       return pickTeacher(pool, teacherLoad, subjId, gradeId, day, si, {
