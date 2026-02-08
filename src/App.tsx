@@ -148,6 +148,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
 function AuthBar({ onLogout }: { onLogout: () => void }) {
   const [syncing, setSyncing] = useState<'idle' | 'up' | 'down'>('idle')
   const [message, setMessage] = useState<string | null>(null)
+  const [showGuide, setShowGuide] = useState(false)
 
   useEffect(() => {
     // Otomatik ilk yükleme (sadece bu sekmede bir kez)
@@ -201,17 +202,91 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="glass p-4" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-      <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-        <div className="pill">ferah olarak giriş yapıldı</div>
-        {message && <span className="muted">{message}</span>}
+    <>
+      <div className="glass p-4" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <div className="pill">ferah olarak giriş yapıldı</div>
+          {message && <span className="muted">{message}</span>}
+        </div>
+        <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" onClick={() => setShowGuide(v => !v)}>{showGuide ? 'Kılavuzu Gizle' : '📘 Kullanım Kılavuzu'}</button>
+          <button className="btn btn-outline btn-sm" onClick={doSave} disabled={syncing !== 'idle'}>💾 Buluta Kaydet</button>
+          <button className="btn btn-outline btn-sm" onClick={doLoad} disabled={syncing !== 'idle'}>☁️ Buluttan Çek</button>
+          <button className="btn btn-danger btn-sm" onClick={doReset} disabled={syncing !== 'idle'}>Sıfırla</button>
+          <button className="btn btn-outline btn-sm" onClick={onLogout}>Çıkış</button>
+        </div>
       </div>
-      <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="btn btn-outline btn-sm" onClick={doSave} disabled={syncing !== 'idle'}>Buluta Kaydet</button>
-        <button className="btn btn-outline btn-sm" onClick={doLoad} disabled={syncing !== 'idle'}>Buluttan Yükle</button>
-        <button className="btn btn-danger btn-sm" onClick={doReset} disabled={syncing !== 'idle'}>Sıfırla</button>
-        <button className="btn btn-outline btn-sm" onClick={onLogout}>Çıkış</button>
-      </div>
-    </div>
+      {showGuide && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.45)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1000,
+          display: 'grid',
+          placeItems: 'center',
+          padding: 16
+        }}>
+          <div className="glass" style={{
+            maxWidth: 760,
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: 20,
+            border: '1px solid rgba(148,163,184,0.2)',
+            boxShadow: '0 18px 40px rgba(0,0,0,0.25)',
+            position: 'relative'
+          }}>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ position: 'absolute', top: 12, right: 12 }}
+              onClick={() => setShowGuide(false)}
+            >
+              Kapat
+            </button>
+            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 20 }}>📘</span>
+              Kullanım Kılavuzu
+            </div>
+            <div style={{ display: 'grid', gap: 12, lineHeight: 1.6 }}>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Okul Bilgisi</div>
+                <div>- Okul / Müdür adı alanlarını doldurun; otomatik saklanır.</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Dersler</div>
+                <div>- Zorunlu saatler sınıf seviyesine göre tanımlı. “Zorunlu Dersler” butonuyla kontrol edin.</div>
+                <div>- Ders kuralları (günlük üst sınır, blok, öncelik) yerleşimde dikkate alınır.</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Öğretmenler</div>
+                <div>- Branş ve tercih sınıfları seçin; uygun olmayan saatleri işaretleyin.</div>
+                <div>- Aynı ders/aynı sınıf seviyesi şubelerine farklı öğretmen atanır; tercihlere dikkat edin.</div>
+                <div>- “Uygunlukları Sıfırla” ile tüm uygunlukları temizleyebilirsiniz.</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Ders Programları</div>
+                <div>- “Programları Oluştur” 180 sn boyunca her tikte 100 deneme dener ve en iyi sonucu tutar.</div>
+                <div>- İlerleme bandı sarı-lacivert; süre ve deneme sayısını gösterir. “Durdur” ile anında iptal edebilirsiniz.</div>
+                <div>- Eksik dersler paneli kalanları ve önerileri listeler.</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Bulut</div>
+                <div>- 💾 Buluta Kaydet: veriyi Supabase’e yazar.</div>
+                <div>- ☁️ Buluttan Çek: son kaydı indirir ve sayfayı yeniler.</div>
+                <div>- Sıfırla: yerel veriyi siler (bulut verisine dokunmaz).</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Çıktılar</div>
+                <div>- 📄 Sınıf/Öğretmen EL PDF; 📊 Çarşaf PDF butonlarıyla yazdır/indir.</div>
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                İpucu: Öğretmen uygunluklarını adım adım daraltıp her seferinde “Programları Oluştur”u denemek yerleşimi hızlandırır.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
