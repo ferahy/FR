@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from '../components/Modal'
 import { useSchool } from '../shared/useSchool'
 import { useGrades } from '../shared/useGrades'
@@ -28,27 +28,36 @@ export default function DersProgramlari() {
   const [showSheet, setShowSheet] = useState(false)
   const [requirementsGrade, setRequirementsGrade] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [isRepairing, setIsRepairing] = useState(false)
-  const [repairLog, setRepairLog] = useState<string[]>([])
-  const [repairStats, setRepairStats] = useState<{ attempt: number; missing: number; best: number } | null>(null)
-  const [changedCells, setChangedCells] = useState<Set<string>>(new Set())
-  const [phase, setPhase] = useState<'generate' | 'repair' | null>(null)
   const [generationStart, setGenerationStart] = useState<number | null>(null)
-  const [repairStart, setRepairStart] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
+  const [triedCount, setTriedCount] = useState(0)
+  const [elapsedTime, setElapsedTime] = useState(0)
+  const [lastResult, setLastResult] = useState<{ success: boolean; message: string; duration: number } | null>(null)
+  const stopRef = useRef(false)
 
-  // İlerleme çubuğu için süre takibi (generate: 120sn, repair: 30sn)
+  const stopGeneration = () => {
+    stopRef.current = true
+  }
+
+  // Son sonucu 8 saniye sonra gizle
+  useEffect(() => {
+    if (lastResult) {
+      const timer = window.setTimeout(() => setLastResult(null), 8000)
+      return () => window.clearTimeout(timer)
+    }
+  }, [lastResult])
+
+  // İlerleme çubuğu için süre takibi (generate: 120sn)
   useEffect(() => {
     let timer: number | undefined
     const tick = () => {
-      if (phase === 'generate' && generationStart != null) {
+      if (isGenerating && generationStart != null) {
         const elapsed = (performance.now() - generationStart) / 1000
         setProgress(Math.min(1, elapsed / 120))
-      } else if (phase === 'repair' && repairStart != null) {
-        const elapsed = (performance.now() - repairStart) / 1000
-        setProgress(Math.min(1, elapsed / 30))
+        setElapsedTime(Math.floor(elapsed))
       } else {
         setProgress(0)
+        setElapsedTime(0)
       }
       timer = window.setTimeout(tick, 250)
     }
@@ -56,7 +65,7 @@ export default function DersProgramlari() {
     return () => {
       if (timer) window.clearTimeout(timer)
     }
-  }, [phase, generationStart, repairStart])
+  }, [isGenerating, generationStart])
 
   const handlePrintHandbooks = () => {
     // Generate HTML for all classes and open in new window
@@ -155,6 +164,10 @@ export default function DersProgramlari() {
     const placedDays: Record<ClassKey, Record<string, Set<Day>>> = {} // class -> subject -> days
     const classGradeMap = new Map<string, string>(classes.map(c => [c.key, c.grade]))
 
+    // Aynı sınıf seviyesinde aynı ders için farklı şubelere farklı öğretmen atamak için
+    // gradeId-subjectId -> Set<teacherId> (bu kombinasyonda hangi öğretmenler zaten atandı)
+    const gradeSubjectAssignedTeachers = new Map<string, Set<string>>()
+
     // ═══════════════════════════════════════════════════════════════
     // SIFIRDAN BAŞLA - Her seferinde temiz tablo ile oluştur
     // ═══════════════════════════════════════════════════════════════
@@ -214,7 +227,16 @@ export default function DersProgramlari() {
       teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
       if (!placedDays[classKey][subjId]) placedDays[classKey][subjId] = new Set<Day>()
       placedDays[classKey][subjId].add(day)
-      if (!classSubjectTeacher[classKey][subjId]) classSubjectTeacher[classKey][subjId] = teacherId
+      if (!classSubjectTeacher[classKey][subjId]) {
+        classSubjectTeacher[classKey][subjId] = teacherId
+        // Bu sınıf seviyesi + ders için öğretmeni kaydet
+        const gradeId = classGradeMap.get(classKey) ?? ''
+        const gsKey = `${gradeId}|${subjId}`
+        if (!gradeSubjectAssignedTeachers.has(gsKey)) {
+          gradeSubjectAssignedTeachers.set(gsKey, new Set())
+        }
+        gradeSubjectAssignedTeachers.get(gsKey)!.add(teacherId)
+      }
     }
 
     const teacherRandom = new Map(teachers.map(t => [t.id, rng()]))
@@ -236,6 +258,22 @@ export default function DersProgramlari() {
           commit: false, requiredTeacherId: locked, occupied: teacherOccupied, randomByTeacher: teacherRandom,
         })
       }
+
+      // Aynı sınıf seviyesinde farklı şubelere farklı öğretmen atamaya çalış
+      const gsKey = `${gradeId}|${subjId}`
+      const alreadyAssigned = gradeSubjectAssignedTeachers.get(gsKey)
+
+      // Henüz bu sınıf seviyesi+ders'e atanmamış öğretmenleri öncelikle dene
+      if (alreadyAssigned && alreadyAssigned.size > 0) {
+        const unassignedPool = pool.filter(t => !alreadyAssigned.has(t.id))
+        if (unassignedPool.length > 0) {
+          const result = pickTeacher(unassignedPool, teacherLoad, subjId, gradeId, day, si, {
+            commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
+          })
+          if (result) return result
+        }
+      }
+
       return pickTeacher(pool, teacherLoad, subjId, gradeId, day, si, {
         commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
       })
@@ -373,7 +411,11 @@ export default function DersProgramlari() {
       const lessonDayOrder = isPriority ? dayOrder : shuffleInPlace([...DAYS], rng)
       const lessonSlotOrder = isPriority ? slotOrder : shuffleInPlace([...slotOrder], rng)
 
-      type Candidate = { day: Day; si: number; teacherId: string; score: number }
+      // Bu sınıf seviyesi+ders için zaten atanmış öğretmenler
+      const gsKey = `${gradeId}|${subjId}`
+      const alreadyAssignedToGrade = gradeSubjectAssignedTeachers.get(gsKey)
+
+      type Candidate = { day: Day; si: number; teacherId: string; score: number; isNewTeacher: boolean }
       const candidates: Candidate[] = []
 
       for (const day of lessonDayOrder) {
@@ -436,6 +478,9 @@ export default function DersProgramlari() {
           }
           if (!teacherId) continue
 
+          // Bu öğretmen bu sınıf seviyesine henüz atanmamış mı?
+          const isNewTeacher = !alreadyAssignedToGrade || !alreadyAssignedToGrade.has(teacherId)
+
           // Skor hesapla
           let score = 0
           if (isPriority) {
@@ -455,12 +500,18 @@ export default function DersProgramlari() {
             score = rng()
           }
 
-          candidates.push({ day, si, teacherId, score })
+          candidates.push({ day, si, teacherId, score, isNewTeacher })
         }
       }
 
       if (candidates.length > 0) {
-        candidates.sort((a, b) => b.score - a.score)
+        // Önce yeni öğretmenleri tercih et (farklı şubelere farklı öğretmen), sonra skora göre sırala
+        candidates.sort((a, b) => {
+          // Yeni öğretmen (bu sınıf seviyesine henüz atanmamış) önce gelsin
+          if (a.isNewTeacher !== b.isNewTeacher) return a.isNewTeacher ? -1 : 1
+          // Sonra skora göre
+          return b.score - a.score
+        })
         const best = candidates[0]
         placeCell(classKey, best.day, best.si, subjId, best.teacherId)
         if (isBlock) {
@@ -1040,722 +1091,82 @@ export default function DersProgramlari() {
     return { tables: workingTables, totalMissing, deficits }
   }
 
-  const repairMissing = () => {
-    if (!tables || !Object.keys(tables).length) return
-    setIsRepairing(true)
-    setPhase('repair')
-    setRepairStart(performance.now())
-    setRepairLog([])
-    setRepairStats({ attempt: 0, missing: 0, best: 999 })
-    setChangedCells(new Set())
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // GLOBAL BACKTRACKING CSP SOLVER
-    // Tüm eksik dersleri bir bütün olarak ele alır ve backtracking ile çözer
-    // ═══════════════════════════════════════════════════════════════════════
-
-    // Değişen hücreleri tespit et
-    const detectChangedCells = (oldTables: typeof tables, newTables: typeof tables): Set<string> => {
-      const changed = new Set<string>()
-      for (const classKey of Object.keys(newTables)) {
-        for (const day of DAYS) {
-          const oldRow = oldTables[classKey]?.[day] ?? []
-          const newRow = newTables[classKey]?.[day] ?? []
-          for (let si = 0; si < Math.max(oldRow.length, newRow.length); si++) {
-            const oldCell = oldRow[si]
-            const newCell = newRow[si]
-            if (oldCell?.subjectId !== newCell?.subjectId || oldCell?.teacherId !== newCell?.teacherId) {
-              changed.add(`${classKey}-${day}-${si}`)
-            }
-          }
-        }
-      }
-      return changed
-    }
-
-    // State tipi - backtracking için snapshot
-    type ScheduleState = {
-      tables: Record<ClassKey, Record<Day, Cell[]>>
-      teacherLoad: Map<string, number>
-      teacherOccupied: Map<string, Set<string>>
-      placedDays: Record<ClassKey, Record<string, Set<Day>>>
-    }
-
-    // State'i klonla (deep copy)
-    const cloneState = (state: ScheduleState): ScheduleState => {
-      const newTables: Record<ClassKey, Record<Day, Cell[]>> = {}
-      for (const ck of Object.keys(state.tables)) {
-        newTables[ck] = {} as Record<Day, Cell[]>
-        for (const d of DAYS) {
-          newTables[ck][d] = state.tables[ck][d].map(c => ({ ...c }))
-        }
-      }
-      const newTeacherLoad = new Map(state.teacherLoad)
-      const newTeacherOccupied = new Map<string, Set<string>>()
-      for (const [tid, set] of state.teacherOccupied) {
-        newTeacherOccupied.set(tid, new Set(set))
-      }
-      const newPlacedDays: Record<ClassKey, Record<string, Set<Day>>> = {}
-      for (const ck of Object.keys(state.placedDays)) {
-        newPlacedDays[ck] = {}
-        for (const sid of Object.keys(state.placedDays[ck])) {
-          newPlacedDays[ck][sid] = new Set(state.placedDays[ck][sid])
-        }
-      }
-      return { tables: newTables, teacherLoad: newTeacherLoad, teacherOccupied: newTeacherOccupied, placedDays: newPlacedDays }
-    }
-
-    // State'i geri yükle
-    const restoreState = (target: ScheduleState, source: ScheduleState): void => {
-      for (const ck of Object.keys(source.tables)) {
-        for (const d of DAYS) {
-          target.tables[ck][d] = source.tables[ck][d].map(c => ({ ...c }))
-        }
-      }
-      target.teacherLoad.clear()
-      for (const [k, v] of source.teacherLoad) target.teacherLoad.set(k, v)
-      target.teacherOccupied.clear()
-      for (const [k, v] of source.teacherOccupied) target.teacherOccupied.set(k, new Set(v))
-      for (const ck of Object.keys(source.placedDays)) {
-        target.placedDays[ck] = {}
-        for (const sid of Object.keys(source.placedDays[ck])) {
-          target.placedDays[ck][sid] = new Set(source.placedDays[ck][sid])
-        }
-      }
-    }
-
-    // Ana state
-    const state: ScheduleState = {
-      tables: {},
-      teacherLoad: new Map(),
-      teacherOccupied: new Map(),
-      placedDays: {}
-    }
-
-    // Mevcut tabloları yükle
-    for (const c of classes) {
-      state.tables[c.key] = Object.fromEntries(
-        DAYS.map(d => [d, (tables[c.key]?.[d] ?? []).map(cell => ({ ...cell }))])
-      ) as Record<Day, Cell[]>
-      state.placedDays[c.key] = {}
-
-      for (const day of DAYS) {
-        for (let si = 0; si < slots.length; si++) {
-          const cell = state.tables[c.key][day]?.[si]
-          if (!cell?.subjectId || !cell.teacherId) continue
-          state.teacherLoad.set(cell.teacherId, (state.teacherLoad.get(cell.teacherId) ?? 0) + 1)
-          if (!state.teacherOccupied.has(cell.teacherId)) state.teacherOccupied.set(cell.teacherId, new Set())
-          state.teacherOccupied.get(cell.teacherId)!.add(`${day}-${si}`)
-          if (!state.placedDays[c.key][cell.subjectId]) state.placedDays[c.key][cell.subjectId] = new Set<Day>()
-          state.placedDays[c.key][cell.subjectId].add(day)
-        }
-      }
-    }
-
-    const subjectHasExplicitPrefs = new Map<string, boolean>()
-    teachers.forEach(t => {
-      if (t.preferredGradesBySubject) {
-        Object.entries(t.preferredGradesBySubject).forEach(([subjId, arr]) => {
-          if (Array.isArray(arr)) subjectHasExplicitPrefs.set(subjId, true)
-        })
-      }
-    })
-
-    const filterAllowedTeachers = (list: typeof teachers, subjId: string, gradeId: string) => {
-      const hasExplicit = subjectHasExplicitPrefs.get(subjId) ?? false
-      return list.filter(t => {
-        const subs = getTeacherSubjectIds(t)
-        if (!subs.includes(subjId)) return false
-        const hasSubjectPref = t.preferredGradesBySubject && Object.prototype.hasOwnProperty.call(t.preferredGradesBySubject, subjId)
-        if (hasExplicit) {
-          if (!hasSubjectPref) return false
-          const subjPref = t.preferredGradesBySubject?.[subjId] ?? []
-          if (!subjPref.includes(gradeId)) return false
-        } else {
-          const subjPref = hasSubjectPref ? t.preferredGradesBySubject?.[subjId] ?? [] : undefined
-          if (subjPref && subjPref.length > 0) {
-            if (!subjPref.includes(gradeId)) return false
-          } else {
-            const prefGrades = t.preferredGrades ?? []
-            if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
-          }
-        }
-        return true
-      })
-    }
-
-    // State-aware helper functions
-    const isFree = (s: ScheduleState, classKey: ClassKey, day: Day, si: number) =>
-      !s.tables[classKey][day]?.[si]?.subjectId
-
-    const daySubjCount = (s: ScheduleState, classKey: ClassKey, day: Day, subjId: string): number =>
-      s.tables[classKey][day].filter(cell => cell.subjectId === subjId).length
-
-    const isTeacherAvailable = (s: ScheduleState, teacherId: string, day: Day, si: number): boolean => {
-      if (s.teacherOccupied.get(teacherId)?.has(`${day}-${si}`)) return false
-      const teacher = teachers.find(t => t.id === teacherId)
-      if (teacher?.unavailable?.[day]?.includes(`S${si + 1}`)) return false
-      return true
-    }
-
-    const canPlaceWithRules = (s: ScheduleState, classKey: ClassKey, day: Day, si: number, subjId: string, isBlock: boolean) => {
-      const subject = subjects.find(sub => sub.id === subjId)
-      const rule = subject?.rule
-      const addCount = isBlock ? 2 : 1
-
-      const currentDayCount = daySubjCount(s, classKey, day, subjId)
-      const perDayMax = rule?.perDayMax ?? 0
-      if (perDayMax > 0 && currentDayCount + addCount > perDayMax) return false
-
-      const minDays = rule?.minDays ?? 0
-      if (minDays > 0) {
-        const placedUnique = s.placedDays[classKey]?.[subjId]?.size ?? 0
-        const alreadyThisDay = s.placedDays[classKey]?.[subjId]?.has(day)
-        if (!alreadyThisDay && placedUnique < minDays - 1 && currentDayCount > 0) return false
-      }
-
-      const maxConsec = rule?.maxConsecutive ?? 0
-      if (maxConsec > 0) {
-        if (isBlock) {
-          let backward = 0
-          for (let k = si - 1; k >= 0 && s.tables[classKey][day][k]?.subjectId === subjId; k--) backward++
-          let forward = 0
-          for (let k = si + 2; k < slots.length && s.tables[classKey][day][k]?.subjectId === subjId; k++) forward++
-          if (backward + 2 + forward > maxConsec) return false
-        } else {
-          let backward = 0
-          for (let k = si - 1; k >= 0 && s.tables[classKey][day][k]?.subjectId === subjId; k--) backward++
-          let forward = 0
-          for (let k = si + 1; k < slots.length && s.tables[classKey][day][k]?.subjectId === subjId; k++) forward++
-          if (backward + 1 + forward > maxConsec) return false
-        }
-      }
-
-      const slotLabel = `S${si + 1}`
-      if (rule?.avoidSlots?.includes(slotLabel)) return false
-      if (isBlock && rule?.avoidSlots?.includes(`S${si + 2}`)) return false
-
-      return true
-    }
-
-    const recomputeSubjectDays = (s: ScheduleState, classKey: ClassKey, subjId: string) => {
-      const days = new Set<Day>()
-      for (const d of DAYS) {
-        if (s.tables[classKey][d].some(c => c.subjectId === subjId)) days.add(d)
-      }
-      s.placedDays[classKey][subjId] = days
-    }
-
-    const placeCell = (s: ScheduleState, classKey: ClassKey, day: Day, si: number, subjId: string, teacherId: string) => {
-      s.tables[classKey][day][si] = { subjectId: subjId, teacherId }
-      s.teacherLoad.set(teacherId, (s.teacherLoad.get(teacherId) ?? 0) + 1)
-      if (!s.teacherOccupied.has(teacherId)) s.teacherOccupied.set(teacherId, new Set())
-      s.teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
-      if (!s.placedDays[classKey][subjId]) s.placedDays[classKey][subjId] = new Set<Day>()
-      s.placedDays[classKey][subjId].add(day)
-    }
-
-    const removeCell = (s: ScheduleState, classKey: ClassKey, day: Day, si: number) => {
-      const cell = s.tables[classKey][day][si]
-      if (!cell?.subjectId || !cell.teacherId) return
-      const teacherId = cell.teacherId
-      const subjId = cell.subjectId
-      s.tables[classKey][day][si] = {}
-      s.teacherLoad.set(teacherId, Math.max(0, (s.teacherLoad.get(teacherId) ?? 0) - 1))
-      s.teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
-      recomputeSubjectDays(s, classKey, subjId)
-    }
-
-    const isPartOfBlock = (s: ScheduleState, classKey: ClassKey, day: Day, si: number): boolean => {
-      const cell = s.tables[classKey][day][si]
-      if (!cell?.subjectId || !cell.teacherId) return false
-      const sameDay = s.tables[classKey][day]
-      if (si + 1 < sameDay.length && sameDay[si + 1]?.subjectId === cell.subjectId && sameDay[si + 1]?.teacherId === cell.teacherId) return true
-      if (si - 1 >= 0 && sameDay[si - 1]?.subjectId === cell.subjectId && sameDay[si - 1]?.teacherId === cell.teacherId) return true
-      return false
-    }
-
-    // Bir dersi belirli bir slota taşıyabilir miyiz?
-    const canMoveLesson = (s: ScheduleState, classKey: ClassKey, fromDay: Day, fromSi: number, toDay: Day, toSi: number): boolean => {
-      const cell = s.tables[classKey][fromDay][fromSi]
-      if (!cell?.subjectId || !cell.teacherId) return false
-      if (!isFree(s, classKey, toDay, toSi)) return false
-      if (!isTeacherAvailable(s, cell.teacherId, toDay, toSi)) return false
-      if (!canPlaceWithRules(s, classKey, toDay, toSi, cell.subjectId, false)) return false
-      return true
-    }
-
-    const moveLesson = (s: ScheduleState, classKey: ClassKey, fromDay: Day, fromSi: number, toDay: Day, toSi: number): void => {
-      const cell = s.tables[classKey][fromDay][fromSi]
-      if (!cell?.subjectId || !cell.teacherId) return
-      const subjId = cell.subjectId
-      const teacherId = cell.teacherId
-      removeCell(s, classKey, fromDay, fromSi)
-      placeCell(s, classKey, toDay, toSi, subjId, teacherId)
-    }
-
-    type Move = { classKey: ClassKey; fromDay: Day; fromSi: number; toDay: Day; toSi: number }
-
-    const tryToFreeSlot = (s: ScheduleState, classKey: ClassKey, day: Day, si: number, visited: Set<string>, depth: number, moves: Move[]): Move[] | null => {
-      if (depth <= 0) return null
-      const slotKey = `${classKey}-${day}-${si}`
-      if (visited.has(slotKey)) return null
-      visited.add(slotKey)
-
-      if (isFree(s, classKey, day, si)) return moves
-      if (isPartOfBlock(s, classKey, day, si)) return null
-
-      const cell = s.tables[classKey][day][si]
-      if (!cell?.subjectId || !cell.teacherId) return null
-
-      for (const toDay of DAYS) {
-        for (let toSi = 0; toSi < slots.length; toSi++) {
-          if (toDay === day && toSi === si) continue
-          if (canMoveLesson(s, classKey, day, si, toDay, toSi)) {
-            return [...moves, { classKey, fromDay: day, fromSi: si, toDay, toSi }]
-          }
-        }
-      }
-
-      for (const toDay of DAYS) {
-        for (let toSi = 0; toSi < slots.length; toSi++) {
-          if (toDay === day && toSi === si) continue
-          if (isFree(s, classKey, toDay, toSi)) continue
-          if (isPartOfBlock(s, classKey, toDay, toSi)) continue
-
-          const targetCell = s.tables[classKey][toDay][toSi]
-          if (!targetCell?.subjectId || !targetCell.teacherId) continue
-          if (!isTeacherAvailable(s, cell.teacherId, toDay, toSi)) continue
-          if (!canPlaceWithRules(s, classKey, toDay, toSi, cell.subjectId, false)) continue
-
-          const subMoves = tryToFreeSlot(s, classKey, toDay, toSi, new Set(visited), depth - 1, [])
-          if (subMoves) {
-            return [...subMoves, { classKey, fromDay: day, fromSi: si, toDay, toSi }]
-          }
-        }
-      }
-      return null
-    }
-
-    const applyMoves = (s: ScheduleState, moves: Move[]): void => {
-      for (const move of moves) {
-        moveLesson(s, move.classKey, move.fromDay, move.fromSi, move.toDay, move.toSi)
-      }
-    }
-
-    const tryToFreeTeacher = (s: ScheduleState, teacherId: string, day: Day, si: number, depth: number): Move[] | null => {
-      if (depth <= 0) return null
-      for (const c of classes) {
-        const cell = s.tables[c.key][day][si]
-        if (cell?.teacherId === teacherId && cell?.subjectId) {
-          const moves = tryToFreeSlot(s, c.key, day, si, new Set(), depth, [])
-          if (moves) return moves
-        }
-      }
-      return null
-    }
-
-    // Eksik dersleri topla
-    type MissingLesson = { classKey: ClassKey; gradeId: string; subjId: string; subjName: string }
-    const getMissingLessons = (s: ScheduleState): MissingLesson[] => {
-      const missing: MissingLesson[] = []
-      for (const c of classes) {
-        const counts: Record<string, number> = {}
-        for (const day of DAYS) {
-          for (const cell of s.tables[c.key][day]) {
-            if (cell?.subjectId) counts[cell.subjectId] = (counts[cell.subjectId] ?? 0) + 1
-          }
-        }
-        for (const subj of subjects) {
-          const needed = subj.weeklyHoursByGrade[c.grade] ?? 0
-          const have = counts[subj.id] ?? 0
-          const miss = needed - have
-          for (let i = 0; i < miss; i++) {
-            missing.push({ classKey: c.key, gradeId: c.grade, subjId: subj.id, subjName: subj.name })
-          }
-        }
-      }
-      return missing
-    }
-
-    // Bir dersin kaç geçerli yerleştirme seçeneği var? (MRV için)
-    type PlacementOption = { day: Day; si: number; teacherId: string; moves: Move[] }
-    const getPlacementOptions = (s: ScheduleState, lesson: MissingLesson, maxDepth: number): PlacementOption[] => {
-      const options: PlacementOption[] = []
-      const eligibleTeachers = filterAllowedTeachers(teachers, lesson.subjId, lesson.gradeId)
-
-      for (const day of DAYS) {
-        for (let si = 0; si < slots.length; si++) {
-          if (!canPlaceWithRules(s, lesson.classKey, day, si, lesson.subjId, false)) continue
-
-          for (const teacher of eligibleTeachers) {
-            const currentLoad = s.teacherLoad.get(teacher.id) ?? 0
-            if (teacher.maxHours && currentLoad >= teacher.maxHours) continue
-
-            // DURUM 1: Slot boş ve öğretmen müsait
-            if (isFree(s, lesson.classKey, day, si) && isTeacherAvailable(s, teacher.id, day, si)) {
-              options.push({ day, si, teacherId: teacher.id, moves: [] })
-              continue
-            }
-
-            // DURUM 2: Slot boş ama öğretmen meşgul
-            if (isFree(s, lesson.classKey, day, si) && !isTeacherAvailable(s, teacher.id, day, si)) {
-              const moves = tryToFreeTeacher(s, teacher.id, day, si, maxDepth)
-              if (moves) {
-                options.push({ day, si, teacherId: teacher.id, moves })
-              }
-              continue
-            }
-
-            // DURUM 3: Slot dolu
-            if (!isFree(s, lesson.classKey, day, si)) {
-              const slotMoves = tryToFreeSlot(s, lesson.classKey, day, si, new Set(), maxDepth, [])
-              if (slotMoves) {
-                // Slot boşaltıldıktan sonra öğretmen müsait olacak mı?
-                const tempState = cloneState(s)
-                applyMoves(tempState, slotMoves)
-                if (isTeacherAvailable(tempState, teacher.id, day, si)) {
-                  options.push({ day, si, teacherId: teacher.id, moves: slotMoves })
-                } else {
-                  // Öğretmeni de serbest bırakmayı dene
-                  const teacherMoves = tryToFreeTeacher(tempState, teacher.id, day, si, maxDepth - slotMoves.length)
-                  if (teacherMoves) {
-                    options.push({ day, si, teacherId: teacher.id, moves: [...slotMoves, ...teacherMoves] })
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      return options
-    }
-
-    // MRV: En kısıtlı dersi seç (en az seçeneği olan)
-    const selectMostConstrainedLesson = (s: ScheduleState, lessons: MissingLesson[], maxDepth: number): { lesson: MissingLesson; options: PlacementOption[] } | null => {
-      let bestLesson: MissingLesson | null = null
-      let bestOptions: PlacementOption[] = []
-      let minOptions = Infinity
-
-      for (const lesson of lessons) {
-        const options = getPlacementOptions(s, lesson, maxDepth)
-        if (options.length === 0) {
-          // Bu ders yerleştirilemez - hemen fail
-          return { lesson, options: [] }
-        }
-        if (options.length < minOptions) {
-          minOptions = options.length
-          bestLesson = lesson
-          bestOptions = options
-        }
-      }
-
-      return bestLesson ? { lesson: bestLesson, options: bestOptions } : null
-    }
-
-    // Ana istatistikler
-    const initialMissing = classes.reduce((sum, c) => sum + calculateDeficits(c, tables[c.key], subjects).reduce((s, d) => s + d.missing, 0), 0)
-    setRepairStats({ attempt: 0, missing: initialMissing, best: initialMissing })
-    setRepairLog([`Başlangıç: ${initialMissing} eksik ders (global backtracking)`])
-
-    let attemptCount = 0
-    let bestMissing = initialMissing
-    let bestState: ScheduleState | null = null
-    const start = performance.now()
-    const MAX_DEPTH = 8
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // GLOBAL BACKTRACKING SOLVE
-    // Tüm eksik dersleri rekürsif olarak yerleştirmeye çalışır
-    // Bir ders yerleştirilemezse, önceki yerleştirmeleri geri alır ve farklı seçenekler dener
-    // ═══════════════════════════════════════════════════════════════════════
-
-    const solve = (s: ScheduleState, depth: number, logPrefix: string): boolean => {
-      attemptCount++
-      const now = performance.now()
-
-      // Timeout kontrolü
-      if (now - start > 30000) return false // 30 saniye
-
-      const missing = getMissingLessons(s)
-
-      // En iyi sonucu kaydet
-      if (missing.length < bestMissing) {
-        bestMissing = missing.length
-        bestState = cloneState(s)
-        setRepairLog(prev => [...prev.slice(-9), `${logPrefix}Yeni en iyi: ${missing.length} eksik kaldı`])
-        setRepairStats({ attempt: attemptCount, missing: missing.length, best: bestMissing })
-        setTables({ ...s.tables })
-        const changed = detectChangedCells(tables, s.tables)
-        setChangedCells(changed)
-      }
-
-      // Çözüm bulundu
-      if (missing.length === 0) {
-        setRepairLog(prev => [...prev.slice(-9), `${logPrefix}ÇÖZÜM BULUNDU!`])
-        return true
-      }
-
-      // Derinlik sınırı
-      if (depth <= 0) return false
-
-      // En kısıtlı dersi seç
-      const selection = selectMostConstrainedLesson(s, missing, MAX_DEPTH)
-      if (!selection || selection.options.length === 0) {
-        // Bu dalda çözüm yok
-        return false
-      }
-
-      const { lesson, options } = selection
-
-      // Her yerleştirme seçeneğini dene
-      for (let i = 0; i < options.length; i++) {
-        const option = options[i]
-
-        // UI güncellemesi (her 100 denemede bir)
-        if (attemptCount % 100 === 0) {
-          setRepairLog(prev => [...prev.slice(-9), `${logPrefix}${lesson.classKey} ${lesson.subjName} deneniyor (${i + 1}/${options.length})...`])
-          setRepairStats({ attempt: attemptCount, missing: missing.length, best: bestMissing })
-        }
-
-        // Mevcut state'i kaydet
-        const snapshot = cloneState(s)
-
-        // Taşımaları uygula ve dersi yerleştir
-        applyMoves(s, option.moves)
-        placeCell(s, lesson.classKey, option.day, option.si, lesson.subjId, option.teacherId)
-
-        // Rekürsif olarak kalan dersleri yerleştir
-        if (solve(s, depth - 1, logPrefix + '  ')) {
-          return true // Çözüm bulundu!
-        }
-
-        // Çözüm bulunamadı, state'i geri yükle (backtrack)
-        restoreState(s, snapshot)
-      }
-
-      return false
-    }
-
-    // Asenkron başlat
-    const runAsync = () => {
-      // İlk olarak basit greedy ile dene
-      setRepairLog(prev => [...prev.slice(-9), 'Adım 1: Greedy yerleştirme...'])
-
-      let greedyPlaced = 0
-      let progress = true
-      while (progress) {
-        progress = false
-        const missing = getMissingLessons(state)
-        for (const lesson of missing) {
-          const options = getPlacementOptions(state, lesson, MAX_DEPTH)
-          if (options.length > 0) {
-            // En az taşıma gerektiren seçeneği al
-            options.sort((a, b) => a.moves.length - b.moves.length)
-            const best = options[0]
-            applyMoves(state, best.moves)
-            placeCell(state, lesson.classKey, best.day, best.si, lesson.subjId, best.teacherId)
-            greedyPlaced++
-            progress = true
-            break
-          }
-        }
-      }
-
-      const remainingAfterGreedy = getMissingLessons(state).length
-      setRepairLog(prev => [...prev.slice(-9), `Greedy: ${greedyPlaced} yerleşti, ${remainingAfterGreedy} kaldı`])
-      setTables({ ...state.tables })
-
-      if (remainingAfterGreedy === 0) {
-        setRepairLog(prev => [...prev.slice(-9), 'Tüm dersler yerleştirildi!'])
-        setRepairStats({ attempt: attemptCount, missing: 0, best: 0 })
-        const changed = detectChangedCells(tables, state.tables)
-        setChangedCells(changed)
-        setIsRepairing(false)
-        setPhase(null)
-        setProgress(0)
-        setRepairStart(null)
-        return
-      }
-
-      // Greedy yetmedi, sistematik yerleştirme ile devam et
-      setRepairLog(prev => [...prev.slice(-9), 'Adım 2: Sistematik yerleştirme başlıyor...'])
-      bestMissing = remainingAfterGreedy
-      bestState = cloneState(state)
-
-      // ═══════════════════════════════════════════════════════════════════════
-      // SİSTEMATİK YERLEŞTİRME: Her sınıf için eksik dersleri sırayla yerleştir
-      // Takılınca farklı stratejiler dene
-      // ═══════════════════════════════════════════════════════════════════════
-
-      let iterationCount = 0
-      const MAX_ITERATIONS = 6000
-
-      // Strateji 1: Önce en kolay dersler (en çok seçenek)
-      // Strateji 2: Önce en zor dersler (en az seçenek - MRV)
-      // Strateji 3: Sınıf sırasıyla
-      let currentStrategy = 0
-      const strategies = ['easy-first', 'hard-first', 'by-class'] as const
-
-      const sortMissingByStrategy = (missing: MissingLesson[], strategy: typeof strategies[number]): MissingLesson[] => {
-        if (strategy === 'by-class') {
-          return [...missing].sort((a, b) => a.classKey.localeCompare(b.classKey))
-        }
-        // easy-first ve hard-first için seçenek sayısına göre sırala
-        const withOptions = missing.map(m => ({
-          lesson: m,
-          optCount: getPlacementOptions(state, m, MAX_DEPTH).length
-        }))
-        if (strategy === 'easy-first') {
-          withOptions.sort((a, b) => b.optCount - a.optCount)
-        } else {
-          withOptions.sort((a, b) => a.optCount - b.optCount)
-        }
-        return withOptions.map(w => w.lesson)
-      }
-
-      const processStep = () => {
-        iterationCount++
-
-        // Timeout veya iterasyon limiti
-        if (performance.now() - start > 30000 || iterationCount > MAX_ITERATIONS) {
-          setRepairLog(prev => [...prev.slice(-9), `Limit aşıldı. En iyi: ${bestMissing} eksik`])
-          if (bestState) {
-            restoreState(state, bestState)
-            setTables({ ...bestState.tables })
-          }
-          setRepairStats({ attempt: attemptCount, missing: bestMissing, best: bestMissing })
-          setChangedCells(detectChangedCells(tables, bestState?.tables ?? state.tables))
-          setIsRepairing(false)
-          setPhase(null)
-          setProgress(0)
-          setRepairStart(null)
-          return
-        }
-
-        const missing = getMissingLessons(state)
-
-        // Çözüm bulundu!
-        if (missing.length === 0) {
-          setRepairLog(prev => [...prev.slice(-9), 'TÜM DERSLER YERLEŞTİRİLDİ!'])
-          setRepairStats({ attempt: attemptCount, missing: 0, best: 0 })
-          setTables({ ...state.tables })
-          setChangedCells(detectChangedCells(tables, state.tables))
-          setIsRepairing(false)
-          setPhase(null)
-          setProgress(0)
-          setRepairStart(null)
-          return
-        }
-
-        // En iyi sonucu kaydet
-        if (missing.length < bestMissing) {
-          bestMissing = missing.length
-          bestState = cloneState(state)
-          setRepairLog(prev => [...prev.slice(-9), `Yeni en iyi: ${missing.length} eksik kaldı`])
-          setTables({ ...state.tables })
-          setRepairStats({ attempt: attemptCount, missing: missing.length, best: bestMissing })
-        }
-
-        // Mevcut stratejiyle sırala
-        const sortedMissing = sortMissingByStrategy(missing, strategies[currentStrategy])
-
-        // Tüm eksik dersleri tek tek dene
-        let placedAny = false
-        for (const lesson of sortedMissing) {
-          const options = getPlacementOptions(state, lesson, MAX_DEPTH)
-
-          if (options.length > 0) {
-            // En az taşıma gerektiren seçeneği al
-            options.sort((a, b) => a.moves.length - b.moves.length)
-            const best = options[0]
-            applyMoves(state, best.moves)
-            placeCell(state, lesson.classKey, best.day, best.si, lesson.subjId, best.teacherId)
-            attemptCount++
-            placedAny = true
-
-            setRepairLog(prev => [...prev.slice(-9), `✓ ${lesson.classKey} ${lesson.subjName} → ${best.day} S${best.si + 1}`])
-            break
-          }
-        }
-
-        if (!placedAny) {
-          // Hiçbir ders yerleştirilemedi, strateji değiştir
-          currentStrategy = (currentStrategy + 1) % strategies.length
-
-          if (currentStrategy === 0) {
-            // Tüm stratejiler denendi, en iyi sonucu göster
-            setRepairLog(prev => [...prev.slice(-9), `Strateji tükendi. Kalan: ${missing.length} eksik`])
-
-            // Son çare: Mevcut en iyi state'e dön
-            if (bestState) {
-              restoreState(state, bestState)
-              setTables({ ...bestState.tables })
-            }
-            setRepairStats({ attempt: attemptCount, missing: bestMissing, best: bestMissing })
-            setChangedCells(detectChangedCells(tables, bestState?.tables ?? state.tables))
-          setIsRepairing(false)
-          setPhase(null)
-          setProgress(0)
-          setRepairStart(null)
-          return
-        }
-
-          setRepairLog(prev => [...prev.slice(-9), `Strateji değişti: ${strategies[currentStrategy]}`])
-          // En iyi state'e dön ve yeni stratejiyle başla
-          if (bestState) {
-            restoreState(state, bestState)
-          }
-        }
-
-        // UI güncellemesi
-        setTables({ ...state.tables })
-        setRepairStats({ attempt: attemptCount, missing: getMissingLessons(state).length, best: bestMissing })
-        window.setTimeout(processStep, 10)
-      }
-
-      window.setTimeout(processStep, 10)
-    }
-
-    window.setTimeout(runAsync, 50)
-  }
-
   const generate = () => {
+    stopRef.current = false
     setIsGenerating(true)
-    setPhase('generate')
     setGenerationStart(performance.now())
     setProgress(0)
+    setTriedCount(0)
     const start = performance.now()
     let best = runOnce(Date.now())
     setTables(best.tables)
     let seed = 1
+    let tried = 1
+    const triedResults = new Map<number, number>() // seed hash -> totalMissing (to avoid exact repeats)
 
     const tick = () => {
-      const now = performance.now()
-      if (best.totalMissing === 0) {
+      // Durdurma kontrolü
+      if (stopRef.current) {
+        const duration = Math.round((performance.now() - start) / 1000)
         setTables(best.tables)
         setIsGenerating(false)
-        setPhase(null)
         setProgress(0)
+        setLastResult({
+          success: best.totalMissing === 0,
+          message: `Durduruldu. ${tried} kombinasyon denendi, ${best.totalMissing} eksik ders kaldı.`,
+          duration
+        })
+        return
+      }
+
+      const now = performance.now()
+      if (best.totalMissing === 0) {
+        const duration = Math.round((now - start) / 1000)
+        setTables(best.tables)
+        setIsGenerating(false)
+        setProgress(0)
+        setLastResult({
+          success: true,
+          message: `Tüm dersler başarıyla yerleştirildi! ${tried} kombinasyon denendi.`,
+          duration
+        })
         return
       }
       if (now - start > 120000) {
+        const duration = Math.round((now - start) / 1000)
         setTables(best.tables)
         setIsGenerating(false)
-        setPhase(null)
         setProgress(0)
-        alert('120 saniye içinde eksik ders 0 bulunamadı. Öğretmen uygunluğu/tercih kısıtları çok sıkı olabilir.')
-        if (best.totalMissing > 0) {
-          window.setTimeout(() => repairMissing(), 10)
-        }
+        setLastResult({
+          success: best.totalMissing === 0,
+          message: best.totalMissing === 0
+            ? `Tüm dersler başarıyla yerleştirildi! ${tried} kombinasyon denendi.`
+            : `${tried} kombinasyon denendi, ${best.totalMissing} eksik ders kaldı. Öğretmen uygunluğu/tercih kısıtları çok sıkı olabilir.`,
+          duration
+        })
         return
       }
 
       for (let i = 0; i < 50; i++) {
-        const res = runOnce(Date.now() + seed * 97)
+        // Her iterasyonda farklı bir seed kullan
+        const currentSeed = Date.now() + seed * 97 + tried * 13
         seed += 1
+        tried += 1
+
+        // Aynı seed hash'i daha önce denenmişse atla
+        const seedHash = currentSeed % 1000000
+        if (triedResults.has(seedHash)) {
+          continue
+        }
+
+        const res = runOnce(currentSeed)
+        triedResults.set(seedHash, res.totalMissing)
         setTables(res.tables)
-        if (res.totalMissing < best.totalMissing) best = res
+        setTriedCount(tried)
+
+        if (res.totalMissing < best.totalMissing) {
+          best = res
+        }
         if (best.totalMissing === 0) break
       }
 
@@ -1883,12 +1294,19 @@ export default function DersProgramlari() {
           <button className="btn btn-outline" onClick={() => setShowSheet(true)} disabled={!Object.keys(tables ?? {}).length || isGenerating}>Çarşaf Görünüm</button>
           <button className="btn btn-outline" onClick={handlePrintHandbooks} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📄 Sınıf El PDF</button>
           <button className="btn btn-outline" onClick={handlePrintSheet} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📊 Sınıf Çarşaf PDF</button>
-          <button className="btn btn-primary" onClick={generate} disabled={isGenerating}>
-            {isGenerating ? 'Yerleştiriliyor…' : 'Programları Oluştur'}
-          </button>
+          {isGenerating ? (
+            <button className="btn btn-danger" onClick={stopGeneration}>
+              Durdur
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={generate}>
+              Programları Oluştur
+            </button>
+          )}
         </div>
       </div>
-      {(isGenerating || isRepairing) && (
+      {/* Aktif süreç göstergesi */}
+      {isGenerating && (
         <div style={{
           margin: '12px 0',
           padding: '14px 16px',
@@ -1899,11 +1317,19 @@ export default function DersProgramlari() {
           border: '1px solid rgba(148, 163, 184, 0.18)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <div style={{ fontWeight: 700, letterSpacing: 0.2 }}>
-              {isGenerating ? 'Yerleştirme deneniyor…' : 'Eksik dersler için onarım çalışıyor…'}
+            <div style={{ fontWeight: 700, letterSpacing: 0.2, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                display: 'inline-block',
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: '#22c55e',
+                animation: 'pulse 1.5s infinite'
+              }} />
+              Yerleştirme deneniyor…
             </div>
-            <div style={{ fontSize: 12, color: '#cbd5e1' }}>
-              {phase === 'generate' ? '120 sn limit' : 'Onarım (30 sn)'}
+            <div style={{ fontSize: 13, color: '#fff', fontWeight: 600, fontFamily: 'monospace' }}>
+              {elapsedTime}s / 120s
             </div>
           </div>
           <div style={{
@@ -1912,7 +1338,7 @@ export default function DersProgramlari() {
             background: 'rgba(255,255,255,0.08)',
             borderRadius: 999,
             overflow: 'hidden',
-            height: 12,
+            height: 14,
             border: '1px solid rgba(255,255,255,0.08)',
             marginBottom: 8
           }}>
@@ -1920,21 +1346,46 @@ export default function DersProgramlari() {
               style={{
                 width: `${Math.min(100, Math.max(0, progress * 100))}%`,
                 height: '100%',
-                background: 'linear-gradient(90deg,#22d3ee,#22c55e)',
-                boxShadow: '0 0 18px rgba(34,211,238,0.6)',
+                background: 'linear-gradient(90deg, #22d3ee, #22c55e)',
+                boxShadow: '0 0 18px rgba(34, 211, 238, 0.6)',
                 transition: 'width 0.2s ease-out'
               }}
             />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#cbd5e1' }}>
-            <span>{phase === 'generate' ? 'Rastgele denemeler sürüyor…' : 'Backtracking / sistematik onarım'}</span>
-            <span>{repairStats ? `Deneme: ${repairStats.attempt} • En iyi eksik: ${repairStats.best}` : ''}</span>
+            <span>Rastgele kombinasyonlar deneniyor…</span>
+            <span>
+              {triedCount > 0 && `${triedCount} kombinasyon denendi`}
+            </span>
           </div>
-          {repairLog.length ? (
-            <div style={{ marginTop: 6, fontSize: 12, color: '#e2e8f0', opacity: 0.9 }}>
-              {repairLog[repairLog.length - 1]}
+        </div>
+      )}
+
+      {/* Tamamlanan süreç sonucu */}
+      {lastResult && !isGenerating && (
+        <div style={{
+          margin: '12px 0',
+          padding: '14px 16px',
+          borderRadius: 12,
+          background: lastResult.success
+            ? 'linear-gradient(135deg, #064e3b, #065f46)'
+            : 'linear-gradient(135deg, #7c2d12, #9a3412)',
+          color: '#e2e8f0',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+          border: `1px solid ${lastResult.success ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>{lastResult.success ? '✓' : '!'}</span>
+              Yerleştirme tamamlandı
             </div>
-          ) : null}
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              {lastResult.duration}s sürdü
+            </div>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 13 }}>
+            {lastResult.message}
+          </div>
         </div>
       )}
 
@@ -1971,12 +1422,10 @@ export default function DersProgramlari() {
                               const cell = tables[c.key]?.[d]?.[si]
                               const subj = subjects.find(s => s.id === cell?.subjectId)
                               const teacher = teachers.find(t => t.id === cell?.teacherId)
-                              const cellKey = `${c.key}-${d}-${si}`
-                              const isChanged = changedCells.has(cellKey)
                               return (
-                                <td key={c.key + d + si} className={`slot ${isChanged ? 'cell-changed' : ''}`} style={isChanged ? { animation: 'cellPulse 0.6s ease-out' } : undefined}>
+                                <td key={c.key + d + si} className="slot">
                                   {cell?.subjectId ? (
-                                    <div className="slot-pill" title={`${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}`} style={isChanged ? { background: 'rgba(34, 197, 94, 0.3)', boxShadow: '0 0 8px rgba(34, 197, 94, 0.5)' } : undefined}>
+                                    <div className="slot-pill" title={`${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}`}>
                                       <span className="dot" style={{ background: subj?.color ?? '#93c5fd' }} />
                                       <span className="s-name">{getSubjectAbbreviation(subj?.name || '', subj?.abbreviation)}</span>
                                       <span className="s-teacher">{teacher ? getTeacherAbbreviation(teacher.name) : '—'}</span>
@@ -2002,10 +1451,8 @@ export default function DersProgramlari() {
                               const cell = tables[c.key]?.[d]?.[si]
                               const subj = subjects.find(s => s.id === cell?.subjectId)
                               const teacher = teachers.find(t => t.id === cell?.teacherId)
-                              const cellKey = `${c.key}-${d}-${si}`
-                              const isChanged = changedCells.has(cellKey)
                               return (
-                                <div key={c.key + d + 'a' + si} className="acc-slot" style={isChanged ? { background: 'rgba(34, 197, 94, 0.2)', animation: 'cellPulse 0.6s ease-out' } : undefined}>
+                                <div key={c.key + d + 'a' + si} className="acc-slot">
                                   <div className="acc-slot-left">S{si + 1}</div>
                                   {cell?.subjectId ? (
                                     <div className="acc-slot-main">
