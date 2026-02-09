@@ -2,6 +2,7 @@ import './index.css'
 import Okul from './pages/Okul'
 import Dersler from './pages/Dersler'
 import Ogretmenler from './pages/Ogretmenler'
+import Atamalar from './pages/Atamalar'
 import DersProgramlari from './pages/DersProgramlari'
 import OgretmenProgramlari from './pages/OgretmenProgramlari'
 import TopNav from './layout/TopNav'
@@ -51,6 +52,7 @@ export default function App() {
       {page === 'okul' && <Okul />}
       {page === 'dersler' && <Dersler />}
       {page === 'ogretmenler' && <Ogretmenler />}
+      {page === 'atamalar' && <Atamalar />}
       {page === 'ders-programlari' && <DersProgramlari />}
       {page === 'ogretmen-programlari' && <OgretmenProgramlari />}
 

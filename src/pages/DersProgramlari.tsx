@@ -4,6 +4,7 @@ import { useSchool } from '../shared/useSchool'
 import { useGrades } from '../shared/useGrades'
 import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
+import { useAssignments } from '../shared/useAssignments'
 import type { Day, Teacher } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
 import { generateClassHandbookHTML, generateClassSheetHTML } from '../shared/htmlPdfGenerator'
@@ -19,6 +20,7 @@ export default function DersProgramlari() {
   const gradeOptions = useGrades()
   const { subjects } = useSubjects()
   const { teachers } = useTeachers()
+  const { assignments } = useAssignments()
 
   const slots = useMemo(() => Array.from({ length: Math.max(1, school.dailyLessons || 1) }, (_, i) => `S${i + 1}`), [school.dailyLessons])
   const classes = useMemo(() => buildClasses(school), [school])
@@ -157,6 +159,8 @@ export default function DersProgramlari() {
     // Global state - tüm sınıflar için ortak
     const teacherLoad = new Map<string, number>()
     const teacherOccupied = new Map<string, Set<string>>() // teacherId -> Set("day-slot")
+    // Bir öğretmenin aynı sınıfa günde kaç kez girdiği (max 3)
+    const teacherClassDayCount = new Map<string, number>() // "teacherId|classKey|day" -> count
 
     // Her sınıf için tablo ve yardımcı veriler
     const workingTables: Record<ClassKey, Record<Day, Cell[]>> = {}
@@ -225,6 +229,9 @@ export default function DersProgramlari() {
       teacherLoad.set(teacherId, (teacherLoad.get(teacherId) ?? 0) + 1)
       if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
       teacherOccupied.get(teacherId)!.add(`${day}-${si}`)
+      // Öğretmenin bu sınıfa bu gün kaç kez girdiğini artır
+      const tcdKey = `${teacherId}|${classKey}|${day}`
+      teacherClassDayCount.set(tcdKey, (teacherClassDayCount.get(tcdKey) ?? 0) + 1)
       if (!placedDays[classKey][subjId]) placedDays[classKey][subjId] = new Set<Day>()
       placedDays[classKey][subjId].add(day)
       if (!classSubjectTeacher[classKey][subjId]) {
@@ -241,6 +248,11 @@ export default function DersProgramlari() {
 
     const teacherRandom = new Map(teachers.map(t => [t.id, rng()]))
 
+    // Atama tablosundan öğretmen al
+    const getAssignedTeacher = (classKey: ClassKey, subjId: string): string | undefined => {
+      return assignments[`${classKey}|${subjId}`]
+    }
+
     const findTeacherForSlot = (
       classKey: ClassKey,
       subjId: string,
@@ -251,15 +263,44 @@ export default function DersProgramlari() {
     ): string | undefined => {
       const tryLocked = opts?.tryLocked ?? true
 
+      // ÖNCELİK 1: Atama tablosundan öğretmen kontrolü
+      const assignedTeacherId = getAssignedTeacher(classKey, subjId)
+      if (assignedTeacherId) {
+        // Atanmış öğretmen var, sadece onu kullan
+        const assignedTeacher = teachers.find(t => t.id === assignedTeacherId)
+        if (assignedTeacher) {
+          // Müsaitlik kontrolü
+          const slotLabel = `S${si + 1}`
+          const isUnavailable = assignedTeacher.unavailable?.[day]?.includes(slotLabel)
+          if (isUnavailable) return undefined
+
+          // Başka sınıfta mı?
+          const slotKey = `${day}-${si}`
+          if (teacherOccupied.get(assignedTeacherId)?.has(slotKey)) return undefined
+
+          // Max saat kontrolü
+          const curLoad = teacherLoad.get(assignedTeacherId) ?? 0
+          if (assignedTeacher.maxHours && curLoad >= assignedTeacher.maxHours) return undefined
+
+          // Aynı sınıfa günde max 3 ders kontrolü
+          const tcdKey = `${assignedTeacherId}|${classKey}|${day}`
+          if ((teacherClassDayCount.get(tcdKey) ?? 0) >= 3) return undefined
+
+          return assignedTeacherId
+        }
+      }
+
+      // ÖNCELİK 2: Daha önce bu sınıf-ders için atanmış öğretmen (session içinde)
       const pool = filterAllowedTeachers(teachers, subjId, gradeId)
       const locked = classSubjectTeacher[classKey][subjId]
       if (tryLocked && locked) {
         return pickTeacher(pool, teacherLoad, subjId, gradeId, day, si, {
           commit: false, requiredTeacherId: locked, occupied: teacherOccupied, randomByTeacher: teacherRandom,
+          classKey, teacherClassDayCount,
         })
       }
 
-      // Aynı sınıf seviyesinde farklı şubelere farklı öğretmen atamaya zorla
+      // ÖNCELİK 3: Aynı sınıf seviyesinde farklı şubelere farklı öğretmen atamaya zorla
       const gsKey = `${gradeId}|${subjId}`
       const alreadyAssigned = gradeSubjectAssignedTeachers.get(gsKey)
       const totalEligible = pool.length
@@ -274,6 +315,7 @@ export default function DersProgramlari() {
         }
         const result = pickTeacher(unassignedPool, teacherLoad, subjId, gradeId, day, si, {
           commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
+          classKey, teacherClassDayCount,
         })
         if (result) return result
         // hiçbiri uygun slot bulamadıysa bu adımda yerleştirmeyi iptal et
@@ -282,6 +324,7 @@ export default function DersProgramlari() {
 
       return pickTeacher(pool, teacherLoad, subjId, gradeId, day, si, {
         commit: false, occupied: teacherOccupied, randomByTeacher: teacherRandom,
+        classKey, teacherClassDayCount,
       })
     }
 
@@ -475,7 +518,8 @@ export default function DersProgramlari() {
             const t1 = findTeacherForSlot(classKey, subjId, gradeId, day, si)
             if (!t1) continue
             const t2 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, {
-              commit: false, requiredTeacherId: t1, occupied: teacherOccupied, randomByTeacher: teacherRandom
+              commit: false, requiredTeacherId: t1, occupied: teacherOccupied, randomByTeacher: teacherRandom,
+              classKey, teacherClassDayCount,
             })
             if (t1 !== t2) continue
             teacherId = t1
@@ -744,7 +788,8 @@ export default function DersProgramlari() {
             const t1 = findTeacherForSlot(classKey, subjId, gradeId, day, si)
             if (!t1) continue
             const t2 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, {
-              commit: false, requiredTeacherId: t1, occupied: teacherOccupied, randomByTeacher: teacherRandom
+              commit: false, requiredTeacherId: t1, occupied: teacherOccupied, randomByTeacher: teacherRandom,
+              classKey, teacherClassDayCount,
             })
             if (t1 !== t2 || !t2) continue
             placeCell(classKey, day, si, subjId, t1)
@@ -1208,6 +1253,21 @@ export default function DersProgramlari() {
   }, [classes, subjects, tables])
   const totalDeficits = classDeficits.reduce((sum, item) => sum + item.deficits.length, 0)
 
+  // Eksik atama sayısı
+  const assignmentStats = useMemo(() => {
+    let total = 0
+    let assigned = 0
+    for (const c of classes) {
+      for (const s of subjects) {
+        const hours = s.weeklyHoursByGrade[c.grade] ?? 0
+        if (hours <= 0) continue
+        total++
+        if (assignments[`${c.key}|${s.id}`]) assigned++
+      }
+    }
+    return { total, assigned, missing: total - assigned }
+  }, [classes, subjects, assignments])
+
   const placementSuggestions = useMemo(() => {
     if (!Object.keys(tables ?? {}).length) return []
 
@@ -1318,6 +1378,40 @@ export default function DersProgramlari() {
           )}
         </div>
       </div>
+
+      {/* Eksik atama uyarısı */}
+      {assignmentStats.missing > 0 && !isGenerating && (
+        <div style={{
+          margin: '12px 0',
+          padding: '14px 16px',
+          borderRadius: 12,
+          background: 'linear-gradient(135deg, #78350f, #92400e)',
+          color: '#fef3c7',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+          border: '1px solid rgba(251, 191, 36, 0.3)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>⚠️</span>
+                Eksik Öğretmen Ataması
+              </div>
+              <div style={{ fontSize: 13, opacity: 0.9 }}>
+                {assignmentStats.missing} ders için öğretmen atanmamış.
+                Atama yapılmayan dersler için algoritma otomatik öğretmen seçecek.
+              </div>
+            </div>
+            <a
+              href="#/atamalar"
+              className="btn btn-outline"
+              style={{ borderColor: 'rgba(251, 191, 36, 0.5)', color: '#fef3c7' }}
+            >
+              Atamalara Git
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Aktif süreç göstergesi */}
       {isGenerating && (
         <div style={{
@@ -1669,12 +1763,21 @@ function pickTeacher(
   gradeId: string,
   day: Day,
   slotIndex: number,
-  opts?: { commit?: boolean; requiredTeacherId?: string; occupied?: Map<string, Set<string>>; randomByTeacher?: Map<string, number> }
+  opts?: {
+    commit?: boolean
+    requiredTeacherId?: string
+    occupied?: Map<string, Set<string>>
+    randomByTeacher?: Map<string, number>
+    classKey?: string
+    teacherClassDayCount?: Map<string, number>
+  }
 ): string | undefined {
   const commit = opts?.commit ?? true
   const requiredTeacherId = opts?.requiredTeacherId
   const occupied = opts?.occupied
   const randomByTeacher = opts?.randomByTeacher
+  const classKey = opts?.classKey
+  const teacherClassDayCount = opts?.teacherClassDayCount
 
   const slotKey = `${day}-${slotIndex}`
 
@@ -1703,6 +1806,13 @@ function pickTeacher(
 
     // Check if teacher is already teaching another class at this time - NEVER skip
     if (occupied && occupied.get(t.id)?.has(slotKey)) return false
+
+    // Aynı sınıfa günde max 3 ders kontrolü
+    if (classKey && teacherClassDayCount) {
+      const tcdKey = `${t.id}|${classKey}|${day}`
+      if ((teacherClassDayCount.get(tcdKey) ?? 0) >= 3) return false
+    }
+
     return true
   })
   if (choices.length === 0) return undefined

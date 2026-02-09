@@ -1,16 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { Subject, Teacher } from './types'
+import type { Subject, Teacher, Assignments } from './types'
 
 const SUBJECT_KEY = 'ferah_subjects_v2'
 const TEACHER_KEY = 'ferah_teachers_v2'
 const SCHOOL_KEY = 'schoolConfig'
 const TIMETABLE_KEY = 'timetables'
+const ASSIGNMENTS_KEY = 'ferah_assignments_v1'
 
 type CloudState = {
   subjects?: Subject[]
   teachers?: Teacher[]
   school?: any
   timetables?: any
+  assignments?: Assignments
 }
 
 // Build-time env veya fallback (GitHub Pages için gömülü)
@@ -40,6 +42,7 @@ function getLocalState(): CloudState {
     teachers: read(TEACHER_KEY),
     school: read(SCHOOL_KEY),
     timetables: read(TIMETABLE_KEY),
+    assignments: read(ASSIGNMENTS_KEY),
   }
 }
 
@@ -56,6 +59,7 @@ function setLocalState(data: CloudState) {
   write(TEACHER_KEY, data.teachers)
   write(SCHOOL_KEY, data.school)
   write(TIMETABLE_KEY, data.timetables)
+  write(ASSIGNMENTS_KEY, data.assignments)
 }
 
 export async function saveToCloud(userId = 'ferah'): Promise<{ ok: boolean; error?: string }> {
@@ -68,6 +72,7 @@ export async function saveToCloud(userId = 'ferah'): Promise<{ ok: boolean; erro
     teachers: payload.teachers ?? [],
     school: payload.school ?? {},
     timetables: payload.timetables ?? {},
+    assignments: payload.assignments ?? {},
     updated_at: new Date().toISOString(),
   })
   if (error) return { ok: false, error: error.message }
@@ -84,6 +89,7 @@ export async function loadFromCloud(userId = 'ferah'): Promise<{ ok: boolean; er
     teachers: data?.teachers ?? [],
     school: data?.school ?? {},
     timetables: data?.timetables ?? {},
+    assignments: data?.assignments ?? {},
   })
   return { ok: true }
 }

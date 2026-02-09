@@ -4,6 +4,7 @@ export type PageKey =
   | 'okul'
   | 'dersler'
   | 'ogretmenler'
+  | 'atamalar'
   | 'ders-programlari'
   | 'ogretmen-programlari'
 
@@ -38,6 +39,7 @@ export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'okul', label: 'Okul' },
   { key: 'dersler', label: 'Dersler' },
   { key: 'ogretmenler', label: 'Öğretmenler' },
+  { key: 'atamalar', label: 'Atamalar' },
   { key: 'ders-programlari', label: 'Ders Programları' },
   { key: 'ogretmen-programlari', label: 'Öğretmen Ders Programları' },
 ]
@@ -47,6 +49,7 @@ export function isValidPage(p: string): p is PageKey {
     p === 'okul' ||
     p === 'dersler' ||
     p === 'ogretmenler' ||
+    p === 'atamalar' ||
     p === 'ders-programlari' ||
     p === 'ogretmen-programlari'
   )

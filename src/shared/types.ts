@@ -38,3 +38,7 @@ export type Teacher = {
   // Optional: preferred grades per subject
   preferredGradesBySubject?: Record<string, string[]>
 }
+
+// Öğretmen-Sınıf-Ders ataması
+// Key format: "classKey|subjectId" -> teacherId
+export type Assignments = Record<string, string>
