@@ -49,13 +49,13 @@ export default function DersProgramlari() {
     }
   }, [lastResult])
 
-  // İlerleme çubuğu için süre takibi (generate: 180sn)
+  // İlerleme çubuğu için süre takibi (generate: 300sn)
   useEffect(() => {
     let timer: number | undefined
     const tick = () => {
       if (isGenerating && generationStart != null) {
         const elapsed = (performance.now() - generationStart) / 1000
-        setProgress(Math.min(1, elapsed / 180))
+        setProgress(Math.min(1, elapsed / 300))
         setElapsedTime(Math.floor(elapsed))
       } else {
         setProgress(0)
@@ -1189,7 +1189,7 @@ export default function DersProgramlari() {
         })
         return
       }
-      if (now - start > 180000) {
+      if (now - start > 300000) {
         const duration = Math.round((now - start) / 1000)
         setTables(best.tables)
         setIsGenerating(false)
@@ -1436,7 +1436,7 @@ export default function DersProgramlari() {
               Yerleştirme deneniyor…
             </div>
             <div style={{ fontSize: 13, color: '#fff', fontWeight: 600, fontFamily: 'monospace' }}>
-              {elapsedTime}s / 180s
+              {elapsedTime}s / 300s
             </div>
           </div>
           <div style={{
