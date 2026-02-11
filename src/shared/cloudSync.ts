@@ -15,6 +15,41 @@ type CloudState = {
   assignments?: Assignments
 }
 
+// Supabase tablosunda "assignments" kolonu henüz yoksa hata veriyor. Bu helper
+// ile önce normal upsert dener, kolon hatasında ise assignments'ı timetables
+// içine gömerek geriye dönük uyumlu şekilde kaydeder.
+async function resilientUpsert(client: SupabaseClient, userId: string, payload: CloudState) {
+  const base = {
+    id: userId,
+    subjects: payload.subjects ?? [],
+    teachers: payload.teachers ?? [],
+    school: payload.school ?? {},
+    timetables: payload.timetables ?? {},
+    assignments: payload.assignments ?? {},
+    updated_at: new Date().toISOString(),
+  }
+
+  // 1) assignments kolonunu kullanarak kaydetmeyi dene
+  let result = await client.from('app_state').upsert(base)
+  if (!result.error) return { ok: true as const, warning: null }
+
+  const missingAssignmentsColumn = result.error?.message?.includes("'assignments' column")
+  if (!missingAssignmentsColumn) {
+    return { ok: false as const, error: result.error.message }
+  }
+
+  // 2) Kolon yoksa assignments'ı timetables içine gömüp yeniden dene
+  const { assignments, timetables, ...rest } = base
+  const mergedTimetables = { ...(timetables ?? {}), __assignments: assignments }
+  result = await client.from('app_state').upsert({ ...rest, timetables: mergedTimetables })
+  if (result.error) return { ok: false as const, error: result.error.message }
+
+  return {
+    ok: true as const,
+    warning: 'assignments kolonu bulunamadı; atamalar timetables içine yedeklenerek kaydedildi',
+  }
+}
+
 // Build-time env veya fallback (GitHub Pages için gömülü)
 const supabaseUrl =
   (import.meta.env.VITE_SUPABASE_URL as string | undefined) ||
@@ -62,21 +97,13 @@ function setLocalState(data: CloudState) {
   write(ASSIGNMENTS_KEY, data.assignments)
 }
 
-export async function saveToCloud(userId = 'ferah'): Promise<{ ok: boolean; error?: string }> {
+export async function saveToCloud(userId = 'ferah'): Promise<{ ok: boolean; error?: string; warning?: string | null }> {
   const client = getClient()
   if (!client) return { ok: false, error: 'Supabase anahtarları eksik (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)' }
   const payload = getLocalState()
-  const { error } = await client.from('app_state').upsert({
-    id: userId,
-    subjects: payload.subjects ?? [],
-    teachers: payload.teachers ?? [],
-    school: payload.school ?? {},
-    timetables: payload.timetables ?? {},
-    assignments: payload.assignments ?? {},
-    updated_at: new Date().toISOString(),
-  })
-  if (error) return { ok: false, error: error.message }
-  return { ok: true }
+  const res = await resilientUpsert(client, userId, payload)
+  if (!res.ok) return { ok: false, error: res.error }
+  return { ok: true, warning: res.warning }
 }
 
 export async function loadFromCloud(userId = 'ferah'): Promise<{ ok: boolean; error?: string }> {
@@ -84,12 +111,15 @@ export async function loadFromCloud(userId = 'ferah'): Promise<{ ok: boolean; er
   if (!client) return { ok: false, error: 'Supabase anahtarları eksik (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)' }
   const { data, error } = await client.from('app_state').select('*').eq('id', userId).single()
   if (error) return { ok: false, error: error.message }
+  // assignments kolonunun eski sürümlerde olmaması durumunda timetables içindeki
+  // __assignments yedeğini kullan
+  const assignments = data?.assignments ?? data?.timetables?.__assignments ?? {}
   setLocalState({
     subjects: data?.subjects ?? [],
     teachers: data?.teachers ?? [],
     school: data?.school ?? {},
     timetables: data?.timetables ?? {},
-    assignments: data?.assignments ?? {},
+    assignments,
   })
   return { ok: true }
 }
