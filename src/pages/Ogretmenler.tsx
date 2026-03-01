@@ -3,12 +3,129 @@ import Modal from '../components/Modal'
 import Toasts, { pushToast } from '../components/Toast'
 import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
-import type { Day, Teacher } from '../shared/types'
+import type { Assignments, Day, Subject, Teacher } from '../shared/types'
 import { useSchool } from '../shared/useSchool'
 import { useGrades } from '../shared/useGrades'
+import { useAssignments } from '../shared/useAssignments'
 import { saveToCloud } from '../shared/cloudSync'
 
 const DAYS: Day[] = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma']
+
+// ─── Utilization helpers ──────────────────────────────────────────────────────
+
+type UtilData = { required: number; available: number; pct: number }
+
+function computeUtilization(
+  t: Teacher,
+  subjects: Subject[],
+  gradesList: { id: string; label: string }[],
+  dailyLessons: number,
+  sectionCount: Record<string, number>,
+  assignments: Assignments
+): UtilData {
+  const totalSlots = DAYS.length * Math.max(1, dailyLessons)
+  const unavailCount = DAYS.reduce((sum, d) => sum + (t.unavailable?.[d]?.length ?? 0), 0)
+  const available = Math.max(0, totalSlots - unavailCount)
+
+  // Assignment-based: classKey|subjectId entries where value === teacher id
+  const myAssignments = Object.entries(assignments).filter(([, tid]) => tid === t.id)
+
+  let required = 0
+  if (myAssignments.length > 0) {
+    // Use actual assignments: each entry = one specific class-section + subject
+    for (const [key] of myAssignments) {
+      const pipeIdx = key.indexOf('|')
+      if (pipeIdx < 0) continue
+      const classKey = key.slice(0, pipeIdx)
+      const subjectId = key.slice(pipeIdx + 1)
+      const dashIdx = classKey.lastIndexOf('-')
+      const grade = dashIdx >= 0 ? classKey.slice(0, dashIdx) : classKey
+      const subj = subjects.find(s => s.id === subjectId)
+      if (!subj) continue
+      required += subj.weeklyHoursByGrade?.[grade] ?? 0
+    }
+  } else {
+    // Fallback: estimate from preferred grades × section count
+    const allGradeIds = gradesList.map(g => g.id)
+    for (const sid of getSubjectIds(t)) {
+      const subj = subjects.find(s => s.id === sid)
+      if (!subj) continue
+      const coveredGrades =
+        t.preferredGradesBySubject?.[sid]?.length
+          ? t.preferredGradesBySubject[sid]
+          : t.preferredGrades?.length
+          ? t.preferredGrades
+          : allGradeIds
+      for (const gid of coveredGrades) {
+        required += (subj.weeklyHoursByGrade?.[gid] ?? 0) * (sectionCount[gid] ?? 1)
+      }
+    }
+  }
+
+  const pct = available > 0 ? Math.min(999, Math.round((required / available) * 100)) : 0
+  return { required, available, pct }
+}
+
+function utilColor(pct: number): { bar: string; text: string; bg: string; label: string } {
+  if (pct >= 95) return { bar: '#ef4444', text: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: 'Aşırı Yüklü' }
+  if (pct >= 80) return { bar: '#f97316', text: '#f97316', bg: 'rgba(249,115,22,0.12)', label: 'Yüksek' }
+  if (pct >= 60) return { bar: '#eab308', text: '#ca8a04', bg: 'rgba(234,179,8,0.10)', label: 'Orta' }
+  if (pct >= 30) return { bar: '#22c55e', text: '#16a34a', bg: 'rgba(34,197,94,0.10)', label: 'Normal' }
+  return { bar: '#6b7280', text: '#9ca3af', bg: 'rgba(107,114,128,0.08)', label: 'Düşük' }
+}
+
+function UtilizationBadge({ pct, required, available }: UtilData) {
+  const c = utilColor(pct)
+  const barW = Math.min(100, pct)
+  return (
+    <div
+      title={`Zorunlu: ${required} ders / Müsait: ${available} slot`}
+      style={{
+        display: 'inline-flex',
+        flexDirection: 'column',
+        gap: 3,
+        minWidth: 110,
+        maxWidth: 160,
+        padding: '4px 8px 5px',
+        borderRadius: 8,
+        background: c.bg,
+        border: `1px solid ${c.bar}30`,
+        cursor: 'default',
+        userSelect: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: c.text, lineHeight: 1 }}>
+          %{pct}
+        </span>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 600,
+          color: c.text,
+          background: `${c.bar}20`,
+          borderRadius: 4,
+          padding: '1px 5px',
+          lineHeight: 1.5,
+        }}>
+          {c.label}
+        </span>
+      </div>
+      {/* bar */}
+      <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%',
+          width: `${barW}%`,
+          borderRadius: 2,
+          background: c.bar,
+          transition: 'width 0.4s ease',
+        }} />
+      </div>
+      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', lineHeight: 1 }}>
+        {required}d / {available}sl
+      </div>
+    </div>
+  )
+}
 
 type FormState = {
   name: string
@@ -22,9 +139,15 @@ type FormState = {
 export default function Ogretmenler() {
   const { subjects } = useSubjects()
   const { teachers, add, update, remove, resetAllAvailability } = useTeachers()
-  const { dailyLessons } = useSchool()
+  const { assignments } = useAssignments()
+  const { dailyLessons, grades: gradeConfigs } = useSchool()
   const gradesList = useGrades()
   const slots = useMemo(() => Array.from({ length: Math.max(1, dailyLessons || 1) }, (_, i) => `S${i + 1}`), [dailyLessons])
+  const sectionCount = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const g of gradeConfigs) map[g.grade] = g.sections.length || 1
+    return map
+  }, [gradeConfigs])
 
   const [query, setQuery] = useState('')
   const [branchFilter, setBranchFilter] = useState<string>('all')
@@ -36,13 +159,16 @@ export default function Ogretmenler() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return teachers.filter((t) => {
-      const matchName = q ? t.name.toLowerCase().includes(q) : true
-      const ids = getSubjectIds(t)
-      const matchBranch = branchFilter === 'all' ? true : ids.includes(branchFilter)
-      return matchName && matchBranch
-    })
-  }, [teachers, query, branchFilter])
+    return teachers
+      .filter((t) => {
+        const matchName = q ? t.name.toLowerCase().includes(q) : true
+        const ids = getSubjectIds(t)
+        const matchBranch = branchFilter === 'all' ? true : ids.includes(branchFilter)
+        return matchName && matchBranch
+      })
+      .map(t => ({ t, util: computeUtilization(t, subjects, gradesList, dailyLessons, sectionCount, assignments) }))
+      .sort((a, b) => b.util.pct - a.util.pct)
+  }, [teachers, query, branchFilter, subjects, gradesList, dailyLessons, sectionCount, assignments])
 
   const openCreate = () => { setEditing(null); setShowModal(true) }
   const openEdit = (t: Teacher) => { setEditing(t); setShowModal(true) }
@@ -121,7 +247,7 @@ export default function Ogretmenler() {
 
       {filtered.length === 0 ? (
         <div className="glass p-6">
-          <div className="muted">Henüz öğretmen yok. “Öğretmen Ekle” ile başlayın.</div>
+          <div className="muted">Henüz öğretmen yok. &quot;Öğretmen Ekle&quot; ile başlayın.</div>
         </div>
       ) : (
         <div className="glass p-6 table-wrap">
@@ -129,6 +255,7 @@ export default function Ogretmenler() {
             <thead>
               <tr>
                 <th>Ad</th>
+                <th>Yoğunluk</th>
                 <th>Branş(lar)</th>
                 <th>Min/Max</th>
                 <th>Tercih Sınıflar</th>
@@ -137,9 +264,10 @@ export default function Ogretmenler() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((t) => (
+              {filtered.map(({ t, util }) => (
                 <tr key={t.id}>
-                  <td>{t.name}</td>
+                  <td style={{ fontWeight: 600 }}>{t.name}</td>
+                  <td><UtilizationBadge {...util} /></td>
                   <td>{branchNames(getSubjectIds(t)) || '—'}</td>
                   <td>{t.minHours ?? 0} / {t.maxHours ?? 0}</td>
                   <td>{formatPrefBySubject(t, subjects, gradesList)}</td>
@@ -159,10 +287,13 @@ export default function Ogretmenler() {
 
           {/* Mobile cards */}
           <div className="cards">
-            {filtered.map((t) => (
+            {filtered.map(({ t, util }) => (
               <div key={t.id} className="card glass">
                 <div className="card-head">
-                  <div className="card-title">{t.name}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div className="card-title">{t.name}</div>
+                    <UtilizationBadge {...util} />
+                  </div>
                   <div className="row">
                     <button className="btn btn-outline btn-sm" onClick={()=> setAvailEditing(t)}>Uygunluk</button>
                     <button className="btn btn-outline btn-sm" onClick={()=> openEdit(t)}>Düzenle</button>
@@ -214,7 +345,7 @@ export default function Ogretmenler() {
       />
 
       <Modal open={!!confirmDelete} onClose={()=> setConfirmDelete(null)} title="Silme Onayı">
-        <p>“{confirmDelete?.name}” öğretmenini silmek istediğinize emin misiniz?</p>
+        <p>"{confirmDelete?.name}" öğretmenini silmek istediğinize emin misiniz?</p>
         <div className="row" style={{ justifyContent:'flex-end', marginTop:12 }}>
           <button className="btn btn-outline" onClick={()=> setConfirmDelete(null)}>İptal</button>
           <button className="btn btn-danger" onClick={onDelete}>Sil</button>

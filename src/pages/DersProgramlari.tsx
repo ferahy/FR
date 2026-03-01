@@ -26,6 +26,7 @@ export default function DersProgramlari() {
   const classes = useMemo(() => buildClasses(school), [school])
 
   const [tables, setTables] = useLocalStorage<Record<ClassKey, Record<Day, Cell[]>>>('timetables', {})
+  const [lockedTeachers] = useLocalStorage<string[]>('lockedTeachers', [])
   const [gradeFilter, setGradeFilter] = useState<string>('all')
   const [showSheet, setShowSheet] = useState(false)
   const [requirementsGrade, setRequirementsGrade] = useState<string | null>(null)
@@ -34,6 +35,8 @@ export default function DersProgramlari() {
   const [progress, setProgress] = useState(0)
   const [triedCount, setTriedCount] = useState(0)
   const [elapsedTime, setElapsedTime] = useState(0)
+  const [bestMissing, setBestMissing] = useState(0)
+  const [totalReqState, setTotalReqState] = useState(0)
   const [lastResult, setLastResult] = useState<{ success: boolean; message: string; duration: number } | null>(null)
   const stopRef = useRef(false)
 
@@ -49,16 +52,15 @@ export default function DersProgramlari() {
     }
   }, [lastResult])
 
-  // İlerleme çubuğu için süre takibi (generate: 300sn)
+  // İlerleme çubuğu: saniyeye göre gider (0-600s)
   useEffect(() => {
     let timer: number | undefined
     const tick = () => {
       if (isGenerating && generationStart != null) {
         const elapsed = (performance.now() - generationStart) / 1000
-        setProgress(Math.min(1, elapsed / 300))
+        setProgress(Math.min(1, elapsed / 600))
         setElapsedTime(Math.floor(elapsed))
       } else {
-        setProgress(0)
         setElapsedTime(0)
       }
       timer = window.setTimeout(tick, 250)
@@ -345,6 +347,36 @@ export default function DersProgramlari() {
       return DAYS.reduce((sum, d) => sum + (t.unavailable?.[d]?.length ?? 0), 0)
     }
 
+    // Her öğretmenin toplam yoğunluk oranı: zorunlu saat / müsait slot
+    const allGradeIds = [...new Set(classes.map(c => c.grade))]
+    const sectionCountByGrade = new Map<string, number>()
+    for (const gid of allGradeIds) {
+      sectionCountByGrade.set(gid, classes.filter(c => c.grade === gid).length)
+    }
+    const teacherLoadRatio = new Map<string, number>()
+    for (const t of teachers) {
+      const unavailCount = DAYS.reduce((sum, d) => sum + (t.unavailable?.[d]?.length ?? 0), 0)
+      const available = Math.max(1, DAYS.length * slots.length - unavailCount)
+      let totalReq = 0
+      for (const sid of getTeacherSubjectIds(t)) {
+        const subj = subjects.find(s => s.id === sid)
+        if (!subj) continue
+        const coveredGrades =
+          t.preferredGradesBySubject?.[sid]?.length
+            ? t.preferredGradesBySubject[sid]
+            : t.preferredGrades?.length
+            ? t.preferredGrades
+            : allGradeIds
+        for (const gid of coveredGrades) {
+          totalReq += (subj.weeklyHoursByGrade?.[gid] ?? 0) * (sectionCountByGrade.get(gid) ?? 1)
+        }
+      }
+      teacherLoadRatio.set(t.id, totalReq / available)
+    }
+
+    // Her ders+sınıf kombinasyonu için: uygun öğretmenler arasında max yoğunluk oranı
+    const maxTeacherLoadBySubjectGrade = new Map<string, number>()
+
     for (const s of subjects) {
       for (const g of classes) {
         const key = `${s.id}|${g.grade}`
@@ -352,8 +384,28 @@ export default function DersProgramlari() {
         const pool = filterAllowedTeachers(teachers, s.id, g.grade)
         const totalCapacity = pool.reduce((sum, t) => sum + computeTeacherCapacity(t), 0)
         const maxUnavailable = pool.reduce((max, t) => Math.max(max, computeTeacherUnavailability(t)), 0)
+        const maxLoad = pool.reduce((max, t) => Math.max(max, teacherLoadRatio.get(t.id) ?? 0), 0)
         capacityBySubjectGrade.set(key, totalCapacity)
         scarcityBySubjectGrade.set(key, maxUnavailable)
+        maxTeacherLoadBySubjectGrade.set(key, maxLoad)
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // KİLİTLİ ÖĞRETMEN SLOTLARINI ÖN YERLEŞTIR
+    // ═══════════════════════════════════════════════════════════════
+    if (lockedTeachers.length > 0) {
+      for (const c of classes) {
+        for (const day of DAYS) {
+          const existingDay = tables[c.key]?.[day]
+          if (!existingDay) continue
+          for (let si = 0; si < existingDay.length; si++) {
+            const cell = existingDay[si]
+            if (!cell?.subjectId || !cell.teacherId) continue
+            if (!lockedTeachers.includes(cell.teacherId)) continue
+            placeCell(c.key, day, si, cell.subjectId, cell.teacherId)
+          }
+        }
       }
     }
 
@@ -425,23 +477,28 @@ export default function DersProgramlari() {
 
     // Öncelik sıralama - stable sort ile shuffle etkisi korunur
     allLessons.sort((a, b) => {
-      // 1. En kısıtlı (çok kapalı) öğretmenlere ait dersler önce
+      // 1. Yoğunluğu yüksek öğretmenin dersleri önce (en kritik kısıt)
+      //    Yoğunluk = toplam zorunlu saat / müsait slot oranı (>1 = fazla yüklü)
+      const la = maxTeacherLoadBySubjectGrade.get(`${a.subjId}|${a.gradeId}`) ?? 0
+      const lb = maxTeacherLoadBySubjectGrade.get(`${b.subjId}|${b.gradeId}`) ?? 0
+      if (Math.abs(la - lb) > 0.02) return lb - la
+      // 2. En kısıtlı (çok kapalı slot) öğretmenlere ait dersler önce
       const sa = scarcityBySubjectGrade.get(`${a.subjId}|${a.gradeId}`) ?? 0
       const sb = scarcityBySubjectGrade.get(`${b.subjId}|${b.gradeId}`) ?? 0
       if (sa !== sb) return sb - sa
-      // 2. Öncelikli dersler önce
+      // 3. Öncelikli dersler önce
       if (a.priority !== b.priority) return a.priority ? -1 : 1
-      // 3. Bloklar önce (2 slot birden lazım, daha kısıtlı)
+      // 4. Bloklar önce (2 slot birden lazım, daha kısıtlı)
       if (a.isBlock !== b.isBlock) return a.isBlock ? -1 : 1
-      // 4. Öğretmen kapasitesi düşük olan dersler önce (daha kısıtlı)
+      // 5. Öğretmen kapasitesi düşük olan dersler önce
       const ca = capacityBySubjectGrade.get(`${a.subjId}|${a.gradeId}`) ?? 0
       const cb = capacityBySubjectGrade.get(`${b.subjId}|${b.gradeId}`) ?? 0
       if (ca !== cb) return ca - cb
-      // 5. Az öğretmeni olan dersler önce (daha kısıtlı)
+      // 6. Az öğretmeni olan dersler önce
       const ea = eligibleTeacherCount(a.subjId, a.gradeId)
       const eb = eligibleTeacherCount(b.subjId, b.gradeId)
       if (ea !== eb) return ea - eb
-      // 6. Çok saatli dersler önce
+      // 7. Çok saatli dersler önce
       const ha = subjects.find(s => s.id === a.subjId)?.weeklyHoursByGrade[a.gradeId] ?? 0
       const hb = subjects.find(s => s.id === b.subjId)?.weeklyHoursByGrade[b.gradeId] ?? 0
       return hb - ha
@@ -482,9 +539,10 @@ export default function DersProgramlari() {
           if (rule?.avoidSlots?.includes(`S${si + 1}`)) continue
           if (isBlock && rule?.avoidSlots?.includes(`S${si + 2}`)) continue
 
-          // Günlük max kontrolü
+          // Günlük max kontrolü (varsayılan: günde en fazla 2)
           const adding = isBlock ? 2 : 1
-          if (perDayMax > 0 && currentDayCount + adding > perDayMax) continue
+          const effectivePerDayMax = perDayMax > 0 ? perDayMax : 2
+          if (currentDayCount + adding > effectivePerDayMax) continue
 
           // minDays: farklı günlere yayılmayı zorla
           const minDays = rule?.minDays ?? 0
@@ -511,6 +569,23 @@ export default function DersProgramlari() {
             if (backward + 1 + forward > maxConsec) continue
           }
         }
+
+          // Ardışıklık kuralı: aynı günde aynı ders varsa yeni slot mevcut bloğa bitişik olmalı
+          {
+            const existingOnDay: number[] = []
+            for (let k = 0; k < slots.length; k++) {
+              if (workingTables[classKey][day][k]?.subjectId === subjId) existingOnDay.push(k)
+            }
+            if (existingOnDay.length > 0) {
+              const newSlots = isBlock ? [si, si + 1] : [si]
+              const combined = [...existingOnDay, ...newSlots].sort((a, b) => a - b)
+              let contiguous = true
+              for (let i = 1; i < combined.length; i++) {
+                if (combined[i] !== combined[i - 1] + 1) { contiguous = false; break }
+              }
+              if (!contiguous) continue
+            }
+          }
 
           // Öğretmen bul
           let teacherId: string | undefined
@@ -585,7 +660,8 @@ export default function DersProgramlari() {
 
       const currentDayCount = daySubjCount(classKey, day, subjId)
       const perDayMax = rule?.perDayMax ?? 0
-      if (perDayMax > 0 && currentDayCount + addCount > perDayMax) return false
+      const effectivePerDayMax = perDayMax > 0 ? perDayMax : 2
+      if (currentDayCount + addCount > effectivePerDayMax) return false
 
       // minDays: aynı güne yığılmayı engelle
       const minDays = rule?.minDays ?? 0
@@ -614,7 +690,21 @@ export default function DersProgramlari() {
           for (let k = si + 1; k < slots.length && workingTables[classKey][day][k]?.subjectId === subjId; k++) forward++
           if (backward + 1 + forward > maxConsec) return false
         }
-        // NOT: Bitişiklik zorunluluğu kaldırıldı - aynı gün farklı saatlerde olabilir
+      }
+
+      // Ardışıklık: aynı günde aynı ders varsa yeni slot mevcut bloğa bitişik olmalı
+      {
+        const existingOnDay: number[] = []
+        for (let k = 0; k < slots.length; k++) {
+          if (workingTables[classKey][day][k]?.subjectId === subjId) existingOnDay.push(k)
+        }
+        if (existingOnDay.length > 0) {
+          const newSlots = isBlock ? [si, si + 1] : [si]
+          const combined = [...existingOnDay, ...newSlots].sort((a, b) => a - b)
+          for (let i = 1; i < combined.length; i++) {
+            if (combined[i] !== combined[i - 1] + 1) return false
+          }
+        }
       }
 
       // avoidSlots kontrolü
@@ -1033,6 +1123,175 @@ export default function DersProgramlari() {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // DEEP REPAIR HELPERS
+    // ═══════════════════════════════════════════════════════════════
+
+    // Hangi sınıf/ders, belirli bir öğretmeni belirli bir slot'ta tutuyor?
+    const findTeacherBlocker = (teacherId: string, day: Day, si: number): { classKey: ClassKey; subjId: string } | null => {
+      for (const c of classes) {
+        const cell = workingTables[c.key][day]?.[si]
+        if (cell?.teacherId === teacherId && cell.subjectId) {
+          return { classKey: c.key, subjId: cell.subjectId }
+        }
+      }
+      return null
+    }
+
+    // Bir öğretmeni belirli slot'tan serbest bırak: o öğretmenin o slot'taki dersini başka yere taşı
+    const tryFreeTeacherSlot = (teacherId: string, day: Day, si: number): boolean => {
+      const blocker = findTeacherBlocker(teacherId, day, si)
+      if (!blocker) return false
+      const { classKey: bck, subjId: bsid } = blocker
+
+      // Blok dersin ortasına dokunma
+      const bDay = workingTables[bck][day]
+      if (si + 1 < bDay.length && bDay[si + 1]?.subjectId === bsid && bDay[si + 1]?.teacherId === teacherId) return false
+      if (si - 1 >= 0 && bDay[si - 1]?.subjectId === bsid && bDay[si - 1]?.teacherId === teacherId) return false
+
+      const teacher = teachers.find(t => t.id === teacherId)
+
+      for (const d2 of DAYS) {
+        for (let s2 = 0; s2 < slots.length; s2++) {
+          if (d2 === day && s2 === si) continue
+          if (!isFree(bck, d2, s2)) continue
+          if (teacherOccupied.get(teacherId)?.has(`${d2}-${s2}`)) continue
+          if (teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)) continue
+          if (!canPlaceWithRules(bck, d2, s2, bsid, false)) continue
+
+          // Dersi yeni slota taşı
+          workingTables[bck][d2][s2] = workingTables[bck][day][si]
+          workingTables[bck][day][si] = {}
+          teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
+          if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
+          teacherOccupied.get(teacherId)!.add(`${d2}-${s2}`)
+          const tcdOld = `${teacherId}|${bck}|${day}`
+          const tcdNew = `${teacherId}|${bck}|${d2}`
+          teacherClassDayCount.set(tcdOld, Math.max(0, (teacherClassDayCount.get(tcdOld) ?? 0) - 1))
+          teacherClassDayCount.set(tcdNew, (teacherClassDayCount.get(tcdNew) ?? 0) + 1)
+          recomputeSubjectDays(bck, bsid)
+          return true
+        }
+      }
+      return false
+    }
+
+    // Ardışıklık kuralına göre bu gün için YALNIZCA geçerli ekleme slotlarını döndür.
+    // Aynı ders zaten günde varsa, yeni slot mevcut bloğa bitişik olmak zorunda.
+    const getAdjacentInsertionSlots = (classKey: ClassKey, day: Day, subjId: string, isBlock: boolean): number[] => {
+      const existing: number[] = []
+      for (let k = 0; k < slots.length; k++) {
+        if (workingTables[classKey][day][k]?.subjectId === subjId) existing.push(k)
+      }
+      if (existing.length === 0) {
+        // Kısıt yok — tüm slotlar geçerli
+        const maxSi = isBlock ? slots.length - 1 : slots.length
+        return Array.from({ length: maxSi }, (_, i) => i)
+      }
+      const min = Math.min(...existing)
+      const max = Math.max(...existing)
+      const result: number[] = []
+      if (isBlock) {
+        if (min >= 2) result.push(min - 2)
+        if (max + 2 < slots.length) result.push(max + 1)
+      } else {
+        if (min > 0) result.push(min - 1)
+        if (max + 1 < slots.length) result.push(max + 1)
+      }
+      return result
+    }
+
+    // Akıllı derin yerleştirme:
+    // 1. Slot boşaltma (relocate + chain)
+    // 2. Öğretmeni serbest bırakma (başka sınıftaki dersini taşıma)
+    // 3. İkisinin kombinasyonu
+    const tryPlaceDeep = (classKey: ClassKey, subjId: string, gradeId: string, isBlock: boolean): boolean => {
+      const subject = subjects.find(s => s.id === subjId)
+      const rule = subject?.rule
+      const perDayMax = rule?.perDayMax ?? 0
+      const effectivePerDayMax = perDayMax > 0 ? perDayMax : 2
+
+      for (const day of DAYS) {
+        const currentDayCount = daySubjCount(classKey, day, subjId)
+        if (currentDayCount + (isBlock ? 2 : 1) > effectivePerDayMax) continue
+
+        const insertionSlots = getAdjacentInsertionSlots(classKey, day, subjId, isBlock)
+
+        for (const si of insertionSlots) {
+          if (si >= slots.length) continue
+          if (isBlock && si + 1 >= slots.length) continue
+
+          // Avoid slots kontrolü
+          if (rule?.avoidSlots?.includes(`S${si + 1}`)) continue
+          if (isBlock && rule?.avoidSlots?.includes(`S${si + 2}`)) continue
+
+          // maxConsecutive kontrolü
+          const maxConsec = rule?.maxConsecutive ?? 0
+          if (maxConsec > 0) {
+            const existingOnDay = []
+            for (let k = 0; k < slots.length; k++) {
+              if (workingTables[classKey][day][k]?.subjectId === subjId) existingOnDay.push(k)
+            }
+            const newSlots = isBlock ? [si, si + 1] : [si]
+            const combined = [...existingOnDay, ...newSlots].sort((a, b) => a - b)
+            if (combined.length > maxConsec) continue
+          }
+
+          // Adım 1: si slotunu boşalt
+          if (!isFree(classKey, day, si)) {
+            if (!tryRelocateSingle(classKey, day, si) && !tryChainRelocate(classKey, day, si)) continue
+          }
+          if (!isFree(classKey, day, si)) continue
+
+          // Adım 2 (blok): si+1 slotunu boşalt
+          if (isBlock) {
+            if (!isFree(classKey, day, si + 1)) {
+              if (!tryRelocateSingle(classKey, day, si + 1) && !tryChainRelocate(classKey, day, si + 1)) continue
+            }
+            if (!isFree(classKey, day, si + 1)) continue
+          }
+
+          // Adım 3: Öğretmen bul
+          let teacherId: string | undefined = findTeacherForSlot(classKey, subjId, gradeId, day, si)
+
+          if (!teacherId) {
+            // Öğretmen başka sınıfta mı? Onu oradan kurtar
+            const pool = filterAllowedTeachers(teachers, subjId, gradeId)
+            for (const t of pool) {
+              if (!teacherOccupied.get(t.id)?.has(`${day}-${si}`)) continue
+              const teacher = teachers.find(x => x.id === t.id)
+              if (teacher?.unavailable?.[day]?.includes(`S${si + 1}`)) continue
+              if ((teacherLoad.get(t.id) ?? 0) >= (teacher?.maxHours ?? Infinity)) continue
+              if (tryFreeTeacherSlot(t.id, day, si)) {
+                teacherId = findTeacherForSlot(classKey, subjId, gradeId, day, si)
+                if (teacherId) break
+              }
+            }
+          }
+
+          if (!teacherId) continue
+
+          // Adım 4 (blok): öğretmen si+1'de de serbest mi?
+          if (isBlock) {
+            const slotKey2 = `${day}-${si + 1}`
+            if (teacherOccupied.get(teacherId)?.has(slotKey2)) {
+              if (!tryFreeTeacherSlot(teacherId, day, si + 1)) continue
+            }
+            const t2 = pickTeacher(teachers, teacherLoad, subjId, gradeId, day, si + 1, {
+              commit: false, requiredTeacherId: teacherId, occupied: teacherOccupied,
+              randomByTeacher: teacherRandom, classKey, teacherClassDayCount,
+            })
+            if (teacherId !== t2) continue
+          }
+
+          placeCell(classKey, day, si, subjId, teacherId)
+          if (isBlock) placeCell(classKey, day, si + 1, subjId, teacherId)
+          return true
+        }
+      }
+      return false
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // PHASE 6: Eksikleri yer açarak tamamlama (kural bozmaz)
     // ═══════════════════════════════════════════════════════════════
     for (let pass = 0; pass < 3; pass++) {
@@ -1131,6 +1390,55 @@ export default function DersProgramlari() {
       if (!progress) break
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // PHASE 7: Derin onarım — öğretmen serbest bırakma + zincir taşıma
+    // ═══════════════════════════════════════════════════════════════
+    for (let pass = 0; pass < 6; pass++) {
+      let madeProgress = false
+
+      // Her sınıf için mevcut eksikleri hesapla
+      const allDeficits: { classKey: ClassKey; gradeId: string; subjId: string; missing: number; isMandatory: boolean }[] = []
+      for (const c of classes) {
+        const gradeId = c.grade
+        const currentCounts: Record<string, number> = {}
+        for (const day of DAYS) {
+          for (const cell of workingTables[c.key][day]) {
+            if (cell?.subjectId) currentCounts[cell.subjectId] = (currentCounts[cell.subjectId] ?? 0) + 1
+          }
+        }
+        for (const s of subjects) {
+          const totalNeeded = s.weeklyHoursByGrade[gradeId] ?? 0
+          if (totalNeeded <= 0) continue
+          const missing = totalNeeded - (currentCounts[s.id] ?? 0)
+          if (missing <= 0) continue
+          allDeficits.push({
+            classKey: c.key, gradeId, subjId: s.id, missing,
+            isMandatory: isMandatoryBlock(s, gradeId),
+          })
+        }
+      }
+
+      if (allDeficits.length === 0) break
+
+      // En az eksikten en çoğa sırala (kolay olanları önce bitir)
+      allDeficits.sort((a, b) => a.missing - b.missing)
+
+      for (const item of allDeficits) {
+        const { classKey, gradeId, subjId, isMandatory } = item
+        let remaining = item.missing
+
+        while (remaining > 0) {
+          const useBlock = isMandatory && remaining >= 2
+          const placed = tryPlaceDeep(classKey, subjId, gradeId, useBlock)
+          if (!placed) break
+          remaining -= useBlock ? 2 : 1
+          madeProgress = true
+        }
+      }
+
+      if (!madeProgress) break
+    }
+
     const deficits = classes.map(c => ({
       classKey: c.key,
       deficits: calculateDeficits(c, workingTables[c.key], subjects)
@@ -1148,26 +1456,43 @@ export default function DersProgramlari() {
     setGenerationStart(performance.now())
     setProgress(0)
     setTriedCount(0)
+
+    // Toplam gerekli ders saati (eksik göstergesi için)
+    const totalReq = classes.reduce((sum, c) =>
+      sum + subjects.reduce((s2, subj) => s2 + (subj.weeklyHoursByGrade[c.grade] ?? 0), 0), 0)
+    setTotalReqState(totalReq)
+
     const start = performance.now()
     let best = runOnce(Date.now())
     setTables(best.tables)
-    let seed = 1
+    setBestMissing(best.totalMissing)
+
     let tried = 1
-    const seenSignatures = new Set<string>() // deficit imzaları; aynı eksik desenini tekrar denememek için
-    const makeSignature = (defs: { classKey: string; deficits: { name: string; missing: number }[] }[]) => {
-      return defs
-        .map(d => `${d.classKey}:${d.deficits.map(x => `${x.name}:${x.missing}`).join('|')}`)
-        .sort()
-        .join('||')
+    // XOR-shift: her iterasyonda çok farklı seed üretir, ardışık seed benzerliğini önler
+    let xorSeed = (Date.now() ^ 0xdeadbeef) >>> 0
+    const xorNext = () => {
+      xorSeed ^= xorSeed << 13
+      xorSeed ^= xorSeed >>> 17
+      xorSeed ^= xorSeed << 5
+      xorSeed = xorSeed >>> 0
+      return xorSeed
+    }
+
+    const seenSignatures = new Set<string>()
+    const makeSignature = (defs: { classKey: string; deficits: { name: string; missing: number }[] }[]) =>
+      defs.map(d => `${d.classKey}:${d.deficits.map(x => `${x.name}:${x.missing}`).join('|')}`).sort().join('||')
+
+    const finish = (now: number) => {
+      const duration = Math.round((now - start) / 1000)
+      setTables(best.tables)
+      setIsGenerating(false)
+      setProgress(0)
+      return duration
     }
 
     const tick = () => {
-      // Durdurma kontrolü
       if (stopRef.current) {
-        const duration = Math.round((performance.now() - start) / 1000)
-        setTables(best.tables)
-        setIsGenerating(false)
-        setProgress(0)
+        const duration = finish(performance.now())
         setLastResult({
           success: best.totalMissing === 0,
           message: `Durduruldu. ${tried} kombinasyon denendi, ${best.totalMissing} eksik ders kaldı.`,
@@ -1178,10 +1503,7 @@ export default function DersProgramlari() {
 
       const now = performance.now()
       if (best.totalMissing === 0) {
-        const duration = Math.round((now - start) / 1000)
-        setTables(best.tables)
-        setIsGenerating(false)
-        setProgress(0)
+        const duration = finish(now)
         setLastResult({
           success: true,
           message: `Tüm dersler başarıyla yerleştirildi! ${tried} kombinasyon denendi.`,
@@ -1189,11 +1511,8 @@ export default function DersProgramlari() {
         })
         return
       }
-      if (now - start > 300000) {
-        const duration = Math.round((now - start) / 1000)
-        setTables(best.tables)
-        setIsGenerating(false)
-        setProgress(0)
+      if (now - start > 600000) {
+        const duration = finish(now)
         setLastResult({
           success: best.totalMissing === 0,
           message: best.totalMissing === 0
@@ -1204,30 +1523,32 @@ export default function DersProgramlari() {
         return
       }
 
-      for (let i = 0; i < 100; i++) {
-        // Her iterasyonda farklı bir seed kullan
-        const currentSeed = Date.now() + seed * 97 + tried * 13
-        seed += 1
+      // 200 deneme/tick — daha fazla keşif, daha hızlı yakınsama
+      for (let i = 0; i < 200; i++) {
         tried += 1
-
+        const currentSeed = xorNext()
         const res = runOnce(currentSeed)
 
-        // Aynı eksik deseniyle sonuç veren denemeleri atla
         const signature = makeSignature(res.deficits)
-        if (seenSignatures.has(signature)) {
-          continue
-        }
+        if (seenSignatures.has(signature)) continue
         seenSignatures.add(signature)
 
-        setTables(res.tables)
-        setTriedCount(tried)
+        // Signature havuzu çok büyürse eski yarısını temizle (yeni kombinasyonlara yer aç)
+        if (seenSignatures.size > 8000) {
+          const arr = Array.from(seenSignatures)
+          arr.slice(0, 3000).forEach(s => seenSignatures.delete(s))
+        }
 
         if (res.totalMissing < best.totalMissing) {
           best = res
+          setTables(best.tables)
+          setBestMissing(best.totalMissing)
         }
+
         if (best.totalMissing === 0) break
       }
 
+      setTriedCount(tried)
       window.setTimeout(tick, 0)
     }
 
@@ -1367,11 +1688,7 @@ export default function DersProgramlari() {
           <button className="btn btn-outline" onClick={() => setShowSheet(true)} disabled={!Object.keys(tables ?? {}).length || isGenerating}>Çarşaf Görünüm</button>
           <button className="btn btn-outline" onClick={handlePrintHandbooks} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📄 Sınıf El PDF</button>
           <button className="btn btn-outline" onClick={handlePrintSheet} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📊 Sınıf Çarşaf PDF</button>
-          {isGenerating ? (
-            <button className="btn btn-danger" onClick={stopGeneration}>
-              Durdur
-            </button>
-          ) : (
+          {!isGenerating && (
             <button className="btn btn-primary" onClick={generate}>
               Programları Oluştur
             </button>
@@ -1416,54 +1733,114 @@ export default function DersProgramlari() {
       {isGenerating && (
         <div style={{
           margin: '12px 0',
-          padding: '14px 16px',
-          borderRadius: 12,
-          background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+          padding: '20px 22px',
+          borderRadius: 16,
+          background: 'linear-gradient(145deg, #0c1220, #111827)',
           color: '#e2e8f0',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
-          border: '1px solid rgba(148, 163, 184, 0.18)'
+          boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+          border: '1px solid rgba(99,102,241,0.2)',
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <div style={{ fontWeight: 700, letterSpacing: 0.2, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{
-                display: 'inline-block',
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: '#22c55e',
-                animation: 'pulse 1.5s infinite'
-              }} />
-              Yerleştirme deneniyor…
+          {/* Top row: label + stats */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Animated live indicator */}
+              <div style={{ position: 'relative', width: 16, height: 16, flexShrink: 0 }}>
+                <div style={{
+                  position: 'absolute', inset: 0, borderRadius: '50%',
+                  background: '#6366f1',
+                  animation: 'ping 1.4s ease-out infinite',
+                  opacity: 0.5,
+                }} />
+                <div style={{
+                  position: 'absolute', inset: '20%', borderRadius: '50%',
+                  background: '#818cf8',
+                }} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: 0.1 }}>
+                  Ders Programı Oluşturuluyor
+                </div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                  En iyi sonuç her an güncelleniyor
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: 13, color: '#fff', fontWeight: 600, fontFamily: 'monospace' }}>
-              {elapsedTime}s / 300s
+            <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+              {totalReqState > 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'monospace', lineHeight: 1,
+                    color: bestMissing === 0 ? '#22c55e' : bestMissing <= 3 ? '#f59e0b' : '#a5b4fc' }}>
+                    {totalReqState - bestMissing}
+                    <span style={{ fontSize: 13, fontWeight: 400, color: '#475569' }}>/{totalReqState}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
+                    {bestMissing === 0 ? 'tümü yerleşti ✓' : `${bestMissing} eksik`}
+                  </div>
+                </div>
+              )}
+              <div style={{ textAlign: 'right', borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 16 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: '#94a3b8', lineHeight: 1 }}>
+                  {elapsedTime}<span style={{ fontSize: 11, fontWeight: 400, color: '#475569' }}>s</span>
+                </div>
+                <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>/ 600s</div>
+              </div>
             </div>
           </div>
+
+          {/* Progress bar */}
           <div style={{
             position: 'relative',
-            width: '100%',
-            background: 'rgba(255,255,255,0.08)',
+            height: 10,
+            background: 'rgba(255,255,255,0.05)',
             borderRadius: 999,
             overflow: 'hidden',
-            height: 14,
-            border: '1px solid rgba(255,255,255,0.08)',
-            marginBottom: 8
+            marginBottom: 14,
+            border: '1px solid rgba(255,255,255,0.04)',
           }}>
-            <div
-              style={{
-                width: `${Math.min(100, Math.max(0, progress * 100))}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, #22d3ee, #22c55e)',
-                boxShadow: '0 0 18px rgba(34, 211, 238, 0.6)',
-                transition: 'width 0.2s ease-out'
-              }}
-            />
+            {/* Filled portion */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, bottom: 0,
+              width: `${Math.min(100, Math.max(0, progress * 100))}%`,
+              background: progress >= 0.98
+                ? 'linear-gradient(90deg, #22c55e, #16a34a)'
+                : 'linear-gradient(90deg, #4f46e5, #6366f1, #818cf8)',
+              borderRadius: 999,
+              transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: progress > 0.02 ? '0 0 16px rgba(99,102,241,0.55)' : 'none',
+            }} />
+            {/* Shimmer overlay */}
+            {progress > 0.02 && progress < 0.99 && (
+              <div style={{
+                position: 'absolute', top: 0, bottom: 0,
+                width: '40%',
+                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)',
+                animation: 'shimmer 1.8s ease-in-out infinite',
+              }} />
+            )}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#cbd5e1' }}>
-            <span>Rastgele kombinasyonlar deneniyor…</span>
-            <span>
-              {triedCount > 0 && `${triedCount} kombinasyon denendi`}
-            </span>
+
+          {/* Bottom row: combination count + hint */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: 4, height: 4, borderRadius: '50%',
+                  background: '#4f46e5',
+                  animation: `barPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+                  opacity: 0.7,
+                }} />
+              ))}
+              <span style={{ fontSize: 12, color: '#64748b', marginLeft: 4 }}>
+                {triedCount > 0 ? `${triedCount} kombinasyon denendi` : 'Başlatılıyor…'}
+              </span>
+            </div>
+            <button
+              className="btn btn-danger"
+              style={{ padding: '4px 14px', fontSize: 12, borderRadius: 8 }}
+              onClick={stopGeneration}
+            >
+              Durdur
+            </button>
           </div>
         </div>
       )}
@@ -1472,26 +1849,37 @@ export default function DersProgramlari() {
       {lastResult && !isGenerating && (
         <div style={{
           margin: '12px 0',
-          padding: '14px 16px',
-          borderRadius: 12,
+          padding: '16px 20px',
+          borderRadius: 14,
           background: lastResult.success
-            ? 'linear-gradient(135deg, #064e3b, #065f46)'
-            : 'linear-gradient(135deg, #7c2d12, #9a3412)',
+            ? 'linear-gradient(135deg, #052e16, #064e3b)'
+            : 'linear-gradient(135deg, #1c0a00, #7c2d12)',
           color: '#e2e8f0',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
-          border: `1px solid ${lastResult.success ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+          boxShadow: '0 16px 40px rgba(0,0,0,0.25)',
+          border: `1px solid ${lastResult.success ? 'rgba(34,197,94,0.28)' : 'rgba(239,68,68,0.28)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>{lastResult.success ? '✓' : '!'}</span>
-              Yerleştirme tamamlandı
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+            background: lastResult.success ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+            border: `1.5px solid ${lastResult.success ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 16,
+          }}>
+            {lastResult.success ? '✓' : '!'}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>
+              {lastResult.success ? 'Tüm dersler başarıyla yerleştirildi' : 'Yerleştirme tamamlandı'}
             </div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>
-              {lastResult.duration}s sürdü
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>
+              {lastResult.message}
             </div>
           </div>
-          <div style={{ marginTop: 6, fontSize: 13 }}>
-            {lastResult.message}
+          <div style={{ fontSize: 12, color: '#475569', flexShrink: 0 }}>
+            {lastResult.duration}s
           </div>
         </div>
       )}
