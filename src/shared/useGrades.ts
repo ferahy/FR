@@ -26,16 +26,13 @@ const DEFAULT_CONFIG: SchoolConfig = {
 
 export function useGrades() {
   const [cfg] = useLocalStorage<SchoolConfig>('schoolConfig', DEFAULT_CONFIG)
-  const mergedGrades = (() => {
-    const base = cfg.grades && cfg.grades.length ? [...cfg.grades] : [...DEFAULT_GRADES]
-    for (const def of DEFAULT_GRADES) {
-      if (!base.some((g) => g.grade === def.grade)) base.push(def)
-    }
-    return base
-  })()
+  // Okul sayfasında tanımlanan sınıflar neyse aynen o kullanılır; kullanıcı
+  // bir varsayılan sınıfı (ör. Özel Eğitim) silmişse burada hayalet olarak
+  // geri gelmemeli. Sadece hiç sınıf tanımlanmamışsa varsayılanlara dönülür.
+  const activeGrades = cfg.grades && cfg.grades.length ? cfg.grades : DEFAULT_GRADES
   const grades: GradeItem[] = useMemo(
-    () => mergedGrades.map((g) => ({ id: g.grade, label: `${g.grade}. Sınıf` })),
-    [mergedGrades]
+    () => activeGrades.map((g) => ({ id: g.grade, label: `${g.grade}. Sınıf` })),
+    [activeGrades]
   )
   return grades
 }

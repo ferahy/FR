@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocalStorage } from '../shared/useLocalStorage'
+import Modal from '../components/Modal'
 
 type GradeConfig = {
   grade: string
@@ -48,15 +49,34 @@ export default function Okul() {
     setConfig((c) => ({ ...c, principalName: name }))
   }
 
-  const addNextGrade = () => {
-    const input = window.prompt('Eklemek istediğiniz sınıfı yazın (ör: 5, 6, 7, 8):')
-    const grade = input?.trim()
-    if (!grade) return
-    setConfig((c) => {
-      if (c.grades.some((g) => g.grade === grade)) return c
-      return { ...c, grades: [...c.grades, { grade, sections: ['A'] }] }
-    })
+  const [showAddGrade, setShowAddGrade] = useState(false)
+  const [newGradeName, setNewGradeName] = useState('')
+  const [addGradeError, setAddGradeError] = useState<string | null>(null)
+  const addGradeInputRef = useRef<HTMLInputElement>(null)
+
+  const openAddGrade = () => {
+    setNewGradeName('')
+    setAddGradeError(null)
+    setShowAddGrade(true)
   }
+
+  const submitAddGrade = () => {
+    const grade = newGradeName.trim()
+    if (!grade) {
+      setAddGradeError('Sınıf adı boş olamaz')
+      return
+    }
+    if (config.grades.some((g) => g.grade === grade)) {
+      setAddGradeError('Bu sınıf zaten ekli')
+      return
+    }
+    setConfig((c) => ({ ...c, grades: [...c.grades, { grade, sections: ['A'] }] }))
+    setShowAddGrade(false)
+  }
+
+  const gradeQuickPicks = ['5', '6', '7', '8', 'Özel Eğitim'].filter(
+    (g) => !config.grades.some((existing) => existing.grade === g)
+  )
 
   const removeGrade = (grade: string) => {
     setConfig((c) => ({ ...c, grades: c.grades.filter((g) => g.grade !== grade) }))
@@ -174,11 +194,55 @@ export default function Okul() {
         </div>
 
         <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
-          <button className="btn btn-primary" onClick={addNextGrade}>
+          <button className="btn btn-primary" onClick={openAddGrade}>
             Sınıf Ekle
           </button>
         </div>
       </section>
+
+      <Modal
+        open={showAddGrade}
+        onClose={() => setShowAddGrade(false)}
+        title="Sınıf Ekle"
+        initialFocusRef={addGradeInputRef as React.RefObject<HTMLElement | null>}
+      >
+        <div className="form-grid">
+          <div className="field">
+            <span className="field-label">Sınıf Adı</span>
+            <input
+              ref={addGradeInputRef}
+              className={`input ${addGradeError ? 'field-error' : ''}`}
+              value={newGradeName}
+              onChange={(e) => { setNewGradeName(e.target.value); setAddGradeError(null) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitAddGrade() }}
+              placeholder="ör. 5, 6, 7, 8 veya Özel Eğitim"
+            />
+            {addGradeError && <span className="error-text">{addGradeError}</span>}
+          </div>
+
+          {gradeQuickPicks.length > 0 && (
+            <div className="field">
+              <span className="field-label">Hızlı Seçim</span>
+              <div className="row" style={{ gap: 8 }}>
+                {gradeQuickPicks.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    className="chip-add"
+                    onClick={() => { setNewGradeName(g); setAddGradeError(null) }}
+                  >
+                    {/^\d+$/.test(g) ? `${g}. Sınıf` : g}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+          <button className="btn btn-outline" onClick={() => setShowAddGrade(false)}>İptal</button>
+          <button className="btn btn-primary" onClick={submitAddGrade}>Ekle</button>
+        </div>
+      </Modal>
     </>
   )
 }

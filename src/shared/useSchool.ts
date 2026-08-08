@@ -24,20 +24,16 @@ const DEFAULT_CONFIG: SchoolConfig = {
 
 export function useSchool() {
   const [cfg] = useLocalStorage<SchoolConfig>('schoolConfig', DEFAULT_CONFIG)
-  const mergedGrades = (() => {
-    const base = cfg.grades && cfg.grades.length ? [...cfg.grades] : [...DEFAULT_GRADES]
-    for (const def of DEFAULT_GRADES) {
-      if (!base.some((g) => g.grade === def.grade)) {
-        base.push(def)
-      }
-    }
-    return base
-  })()
+  // Okul sayfasında tanımlanan sınıflar neyse aynen o kullanılır; kullanıcı
+  // bir varsayılan sınıfı (ör. Özel Eğitim) silmişse burada hayalet olarak
+  // geri gelmemeli (ders programı oluşturma dahil hiçbir yerde). Sadece hiç
+  // sınıf tanımlanmamışsa varsayılanlara dönülür.
+  const activeGrades = cfg.grades && cfg.grades.length ? cfg.grades : DEFAULT_GRADES
 
   const safeName =
     cfg.schoolName && cfg.schoolName.trim() && cfg.schoolName.trim() !== 'Okul'
       ? cfg.schoolName.trim()
       : 'Hasyurt Ortaokulu'
 
-  return { ...cfg, grades: mergedGrades, schoolName: safeName }
+  return { ...cfg, grades: activeGrades, schoolName: safeName }
 }

@@ -32,7 +32,6 @@ export default function DersProgramlari() {
   const [requirementsGrade, setRequirementsGrade] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationStart, setGenerationStart] = useState<number | null>(null)
-  const [progress, setProgress] = useState(0)
   const [triedCount, setTriedCount] = useState(0)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [bestMissing, setBestMissing] = useState(0)
@@ -52,13 +51,12 @@ export default function DersProgramlari() {
     }
   }, [lastResult])
 
-  // İlerleme çubuğu: saniyeye göre gider (0-600s)
+  // Geçen süre sayacı (ilerleme çubuğu artık gerçek yerleşme oranını gösteriyor, bkz. placementRatio)
   useEffect(() => {
     let timer: number | undefined
     const tick = () => {
       if (isGenerating && generationStart != null) {
         const elapsed = (performance.now() - generationStart) / 1000
-        setProgress(Math.min(1, elapsed / 600))
         setElapsedTime(Math.floor(elapsed))
       } else {
         setElapsedTime(0)
@@ -721,6 +719,36 @@ export default function DersProgramlari() {
         if (workingTables[classKey][d].some(c => c.subjectId === subjId)) days.add(d)
       }
       placedDays[classKey][subjId] = days
+    }
+
+    // placeCell'in tersi. Simulated annealing fazının hamlelerini geri almak için kullanılır.
+    // classSubjectTeacher / gradeSubjectAssignedTeachers kilidini yalnızca bu sınıf-ders için
+    // hiç hücre kalmadığında serbest bırakır (başka hücreler hâlâ o kilide güveniyor olabilir).
+    const unplaceCell = (classKey: ClassKey, day: Day, si: number): { subjId: string; teacherId: string } | null => {
+      const cell = workingTables[classKey][day][si]
+      if (!cell?.subjectId || !cell.teacherId) return null
+      const subjId = cell.subjectId
+      const teacherId = cell.teacherId
+
+      workingTables[classKey][day][si] = {}
+      teacherLoad.set(teacherId, Math.max(0, (teacherLoad.get(teacherId) ?? 0) - 1))
+      teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
+      const tcdKey = `${teacherId}|${classKey}|${day}`
+      teacherClassDayCount.set(tcdKey, Math.max(0, (teacherClassDayCount.get(tcdKey) ?? 0) - 1))
+      recomputeSubjectDays(classKey, subjId)
+
+      const stillHasCells = DAYS.some(d => workingTables[classKey][d].some(c => c.subjectId === subjId))
+      if (!stillHasCells) {
+        delete classSubjectTeacher[classKey][subjId]
+        const gradeId = classGradeMap.get(classKey) ?? ''
+        const gsKey = `${gradeId}|${subjId}`
+        const usedElsewhereInGrade = classes.some(c =>
+          c.key !== classKey && c.grade === gradeId &&
+          DAYS.some(d => workingTables[c.key][d].some(cc => cc.subjectId === subjId && cc.teacherId === teacherId))
+        )
+        if (!usedElsewhereInGrade) gradeSubjectAssignedTeachers.get(gsKey)?.delete(teacherId)
+      }
+      return { subjId, teacherId }
     }
 
     const tryRelocateSingle = (classKey: ClassKey, day: Day, si: number): boolean => {
@@ -1439,14 +1467,174 @@ export default function DersProgramlari() {
       if (!madeProgress) break
     }
 
-    const deficits = classes.map(c => ({
+    let deficits = classes.map(c => ({
       classKey: c.key,
       deficits: calculateDeficits(c, workingTables[c.key], subjects)
     }))
-    const totalMissing = deficits.reduce(
+    let totalMissing = deficits.reduce(
       (sum, item) => sum + item.deficits.reduce((s, d) => s + d.missing, 0),
       0
     )
+
+    // ═══════════════════════════════════════════════════════════════
+    // PHASE 8: Simulated Annealing — Faz 1-7 sonrası kalan eksikleri iyileştir
+    // Faz 1-7 zaten çoğu senaryoyu tam çözüyor; bu faz SADECE hâlâ eksik
+    // ders varsa çalışır, bu yüzden zaten çözülen durumlarda davranış
+    // birebir aynı kalır. Rastgele hamleler dener (boşluğa yerleştir /
+    // iki dersi yer değiştir / birini feda et) ve "sıcaklık" düştükçe
+    // kötü hamleleri daha az kabul ederek (Metropolis kriteri) Faz 1-7'nin
+    // asla kötüleşmeyen onarımlarının sıkışıp kaldığı yerel çözümlerden
+    // kaçabilir.
+    // ═══════════════════════════════════════════════════════════════
+    if (totalMissing > 0) {
+      const cloneWorkingTables = (): Record<ClassKey, Record<Day, Cell[]>> => {
+        const out: Record<ClassKey, Record<Day, Cell[]>> = {}
+        for (const c of classes) {
+          out[c.key] = {} as Record<Day, Cell[]>
+          for (const day of DAYS) out[c.key][day] = workingTables[c.key][day].map(cell => ({ ...cell }))
+        }
+        return out
+      }
+
+      const pickRandomOccupiedSingle = (): { classKey: ClassKey; day: Day; si: number; subjId: string; teacherId: string } | null => {
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const c = classes[Math.floor(rng() * classes.length)]
+          const day = DAYS[Math.floor(rng() * DAYS.length)]
+          const si = Math.floor(rng() * slots.length)
+          const cell = workingTables[c.key][day][si]
+          if (!cell?.subjectId || !cell.teacherId) continue
+          const dayCells = workingTables[c.key][day]
+          const isBlockPart =
+            (si + 1 < dayCells.length && dayCells[si + 1]?.subjectId === cell.subjectId && dayCells[si + 1]?.teacherId === cell.teacherId) ||
+            (si - 1 >= 0 && dayCells[si - 1]?.subjectId === cell.subjectId && dayCells[si - 1]?.teacherId === cell.teacherId)
+          if (isBlockPart) continue // blok dersler bu MVP'de SA tarafından taşınmaz, Faz 1-7'nin işi
+          return { classKey: c.key, day, si, subjId: cell.subjectId, teacherId: cell.teacherId }
+        }
+        return null
+      }
+
+      let currentMissing = totalMissing
+      let bestMissing = currentMissing
+      let bestSnap = cloneWorkingTables()
+
+      const T_START = 1.2
+      const COOL = 0.97
+      const T_MIN = 0.05
+      const MAX_ITERS = 200
+      const TIME_BUDGET_MS = 15
+      const CHECK_EVERY = 25
+
+      let temperature = T_START
+      const saStart = performance.now()
+
+      for (let iter = 0; iter < MAX_ITERS; iter++) {
+        if (currentMissing === 0) break
+        if (iter % CHECK_EVERY === 0 && performance.now() - saStart > TIME_BUDGET_MS) break
+
+        const roll = rng()
+
+        if (roll < 0.5) {
+          // Hamle A: eksik bir dersi yerleştirmeyi dene (asla kötüleştirmez)
+          const withDeficit: { classKey: ClassKey; gradeId: string; subjId: string; missing: number; isMandatory: boolean }[] = []
+          for (const c of classes) {
+            const gradeId = c.grade
+            const counts: Record<string, number> = {}
+            for (const day of DAYS) {
+              for (const cell of workingTables[c.key][day]) {
+                if (cell?.subjectId) counts[cell.subjectId] = (counts[cell.subjectId] ?? 0) + 1
+              }
+            }
+            for (const s of subjects) {
+              const need = s.weeklyHoursByGrade[gradeId] ?? 0
+              if (need <= 0) continue
+              const missing = need - (counts[s.id] ?? 0)
+              if (missing > 0) withDeficit.push({ classKey: c.key, gradeId, subjId: s.id, missing, isMandatory: isMandatoryBlock(s, gradeId) })
+            }
+          }
+          if (withDeficit.length > 0) {
+            const pick = withDeficit[Math.floor(rng() * withDeficit.length)]
+            const useBlock = pick.isMandatory && pick.missing >= 2
+            const placed = tryPlaceDeep(pick.classKey, pick.subjId, pick.gradeId, useBlock)
+            if (placed) currentMissing -= useBlock ? 2 : 1
+          }
+        } else if (roll < 0.8) {
+          // Hamle B: iki dersi yer değiştir (toplam eksik sayısı değişmez,
+          // ama düzeni bozup yeniden kurarak yeni olasılıklar açar)
+          const a = pickRandomOccupiedSingle()
+          const b = pickRandomOccupiedSingle()
+          if (a && b && !(a.classKey === b.classKey && a.day === b.day && a.si === b.si) && a.subjId !== b.subjId) {
+            const gradeA = classGradeMap.get(a.classKey) ?? ''
+            const gradeB = classGradeMap.get(b.classKey) ?? ''
+            // Bu sınıflarda ilgili ders zaten başka bir öğretmene kilitliyse
+            // (aynı sınıf-ders her zaman aynı öğretmeni kullanmalı), o öğretmeni zorunlu kıl.
+            const requiredAtA = classSubjectTeacher[a.classKey]?.[b.subjId]
+            const requiredAtB = classSubjectTeacher[b.classKey]?.[a.subjId]
+
+            unplaceCell(a.classKey, a.day, a.si)
+            unplaceCell(b.classKey, b.day, b.si)
+
+            const teacherAtA = pickTeacher(
+              filterAllowedTeachers(teachers, b.subjId, gradeA), teacherLoad, b.subjId, gradeA, a.day, a.si,
+              { commit: false, requiredTeacherId: requiredAtA, occupied: teacherOccupied, randomByTeacher: teacherRandom, classKey: a.classKey, teacherClassDayCount }
+            )
+            const teacherAtB = pickTeacher(
+              filterAllowedTeachers(teachers, a.subjId, gradeB), teacherLoad, a.subjId, gradeB, b.day, b.si,
+              { commit: false, requiredTeacherId: requiredAtB, occupied: teacherOccupied, randomByTeacher: teacherRandom, classKey: b.classKey, teacherClassDayCount }
+            )
+            const validA = !!teacherAtA && canPlaceWithRules(a.classKey, a.day, a.si, b.subjId, false)
+            const validB = !!teacherAtB && canPlaceWithRules(b.classKey, b.day, b.si, a.subjId, false)
+
+            if (validA && validB && teacherAtA && teacherAtB) {
+              placeCell(a.classKey, a.day, a.si, b.subjId, teacherAtA)
+              placeCell(b.classKey, b.day, b.si, a.subjId, teacherAtB)
+            } else {
+              // geri al
+              placeCell(a.classKey, a.day, a.si, a.subjId, a.teacherId)
+              placeCell(b.classKey, b.day, b.si, b.subjId, b.teacherId)
+            }
+          }
+        } else {
+          // Hamle C: rastgele bir dersi feda et — Metropolis kriteriyle kabul/red edilir.
+          // Bu, maliyeti gerçekten kötüleştirebilen tek hamledir; onu göze
+          // alabilmek Faz 1-7'nin asla geri adım atmayan onarımının çıkamayacağı
+          // çıkmazlardan kaçmayı sağlar.
+          const victim = pickRandomOccupiedSingle()
+          if (victim) {
+            unplaceCell(victim.classKey, victim.day, victim.si)
+            const delta = 1
+            if (rng() < Math.exp(-delta / temperature)) {
+              currentMissing += delta
+            } else {
+              placeCell(victim.classKey, victim.day, victim.si, victim.subjId, victim.teacherId)
+            }
+          }
+        }
+
+        if (currentMissing < bestMissing) {
+          bestMissing = currentMissing
+          bestSnap = cloneWorkingTables()
+        }
+        temperature = Math.max(T_MIN, temperature * COOL)
+      }
+
+      if (bestMissing < currentMissing) {
+        for (const c of classes) {
+          for (const day of DAYS) {
+            workingTables[c.key][day] = bestSnap[c.key][day]
+          }
+        }
+      }
+
+      deficits = classes.map(c => ({
+        classKey: c.key,
+        deficits: calculateDeficits(c, workingTables[c.key], subjects)
+      }))
+      totalMissing = deficits.reduce(
+        (sum, item) => sum + item.deficits.reduce((s, d) => s + d.missing, 0),
+        0
+      )
+    }
+
     return { tables: workingTables, totalMissing, deficits }
   }
 
@@ -1454,7 +1642,6 @@ export default function DersProgramlari() {
     stopRef.current = false
     setIsGenerating(true)
     setGenerationStart(performance.now())
-    setProgress(0)
     setTriedCount(0)
 
     // Toplam gerekli ders saati (eksik göstergesi için)
@@ -1486,7 +1673,6 @@ export default function DersProgramlari() {
       const duration = Math.round((now - start) / 1000)
       setTables(best.tables)
       setIsGenerating(false)
-      setProgress(0)
       return duration
     }
 
@@ -1523,8 +1709,11 @@ export default function DersProgramlari() {
         return
       }
 
-      // 200 deneme/tick — daha fazla keşif, daha hızlı yakınsama
-      for (let i = 0; i < 200; i++) {
+      // 50 deneme/tick — artık her deneme sonunda kısa bir simulated annealing
+      // iyileştirmesi de çalışabiliyor (bkz. runOnce PHASE 8), bu yüzden batch
+      // boyutu küçültüldü: tek bir tick'in en kötü ihtimalle süresi sınırlı
+      // kalır ve ilerleme çubuğu daha sık güncellenir.
+      for (let i = 0; i < 50; i++) {
         tried += 1
         const currentSeed = xorNext()
         const res = runOnce(currentSeed)
@@ -1573,6 +1762,12 @@ export default function DersProgramlari() {
     }).filter(item => item.deficits.length > 0)
   }, [classes, subjects, tables])
   const totalDeficits = classDeficits.reduce((sum, item) => sum + item.deficits.length, 0)
+
+  // İlerleme çubuğu artık geçen süre yerine gerçekte kaç ders saatinin
+  // yerleştiğini gösterir (0-600s'lik zaman sınırı değil, dersler/toplam oranı)
+  const placementRatio = totalReqState > 0
+    ? Math.min(1, Math.max(0, (totalReqState - bestMissing) / totalReqState))
+    : 0
 
   // Eksik atama sayısı
   const assignmentStats = useMemo(() => {
@@ -1738,56 +1933,57 @@ export default function DersProgramlari() {
           background: 'linear-gradient(145deg, #0c1220, #111827)',
           color: '#e2e8f0',
           boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
-          border: '1px solid rgba(99,102,241,0.2)',
+          border: '1px solid rgba(34,211,238,0.2)',
         }}>
-          {/* Top row: label + stats */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* Animated live indicator */}
-              <div style={{ position: 'relative', width: 16, height: 16, flexShrink: 0 }}>
-                <div style={{
-                  position: 'absolute', inset: 0, borderRadius: '50%',
-                  background: '#6366f1',
-                  animation: 'ping 1.4s ease-out infinite',
-                  opacity: 0.5,
-                }} />
-                <div style={{
-                  position: 'absolute', inset: '20%', borderRadius: '50%',
-                  background: '#818cf8',
-                }} />
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: 0.1 }}>
-                  Ders Programı Oluşturuluyor
-                </div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                  En iyi sonuç her an güncelleniyor
-                </div>
-              </div>
+          {/* Top row: live indicator + title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+            <div style={{ position: 'relative', width: 16, height: 16, flexShrink: 0 }}>
+              <div style={{
+                position: 'absolute', inset: 0, borderRadius: '50%',
+                background: 'var(--accent)',
+                animation: 'ping 1.4s ease-out infinite',
+                opacity: 0.5,
+              }} />
+              <div style={{
+                position: 'absolute', inset: '20%', borderRadius: '50%',
+                background: 'var(--accent-2)',
+              }} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-              {totalReqState > 0 && (
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'monospace', lineHeight: 1,
-                    color: bestMissing === 0 ? '#22c55e' : bestMissing <= 3 ? '#f59e0b' : '#a5b4fc' }}>
-                    {totalReqState - bestMissing}
-                    <span style={{ fontSize: 13, fontWeight: 400, color: '#475569' }}>/{totalReqState}</span>
-                  </div>
-                  <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
-                    {bestMissing === 0 ? 'tümü yerleşti ✓' : `${bestMissing} eksik`}
-                  </div>
-                </div>
-              )}
-              <div style={{ textAlign: 'right', borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: 16 }}>
-                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace', color: '#94a3b8', lineHeight: 1 }}>
-                  {elapsedTime}<span style={{ fontSize: 11, fontWeight: 400, color: '#475569' }}>s</span>
-                </div>
-                <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>/ 600s</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: 0.1 }}>
+                Ders Programı Oluşturuluyor
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                En iyi sonuç her an güncelleniyor
               </div>
             </div>
           </div>
 
-          {/* Progress bar */}
+          {/* Hero: yerleşen ders saati sayısı */}
+          {totalReqState > 0 && (
+            <div style={{ textAlign: 'center', marginBottom: 18 }}>
+              <div style={{
+                fontSize: 44, fontWeight: 800, fontFamily: 'monospace', lineHeight: 1,
+                ...(bestMissing === 0
+                  ? { color: '#22c55e' }
+                  : {
+                      backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
+                      WebkitBackgroundClip: 'text',
+                      backgroundClip: 'text',
+                      color: 'transparent',
+                    }),
+                animation: bestMissing === 0 ? 'lockPop 0.4s ease' : undefined,
+              }}>
+                {totalReqState - bestMissing}
+                <span style={{ fontSize: 20, fontWeight: 400, color: '#475569' }}>/{totalReqState}</span>
+              </div>
+              <div style={{ fontSize: 12, color: bestMissing === 0 ? '#4ade80' : '#64748b', marginTop: 6, fontWeight: 600 }}>
+                {bestMissing === 0 ? 'tüm dersler yerleşti ✓' : `ders saati yerleşti · ${bestMissing} eksik kaldı`}
+              </div>
+            </div>
+          )}
+
+          {/* Progress bar — gerçek yerleşme oranını gösterir */}
           <div style={{
             position: 'relative',
             height: 10,
@@ -1800,16 +1996,19 @@ export default function DersProgramlari() {
             {/* Filled portion */}
             <div style={{
               position: 'absolute', top: 0, left: 0, bottom: 0,
-              width: `${Math.min(100, Math.max(0, progress * 100))}%`,
-              background: progress >= 0.98
+              width: `${Math.min(100, Math.max(0, placementRatio * 100))}%`,
+              background: placementRatio >= 1
                 ? 'linear-gradient(90deg, #22c55e, #16a34a)'
-                : 'linear-gradient(90deg, #4f46e5, #6366f1, #818cf8)',
+                : 'linear-gradient(90deg, var(--accent), var(--accent-2))',
               borderRadius: 999,
-              transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-              boxShadow: progress > 0.02 ? '0 0 16px rgba(99,102,241,0.55)' : 'none',
+              transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: placementRatio <= 0.02 ? 'none' : placementRatio >= 1
+                ? '0 0 16px rgba(34,197,94,0.55)'
+                : '0 0 16px rgba(34,211,238,0.5)',
+              animation: placementRatio >= 1 ? 'barPulse 0.8s ease-in-out 2' : undefined,
             }} />
             {/* Shimmer overlay */}
-            {progress > 0.02 && progress < 0.99 && (
+            {placementRatio > 0.02 && placementRatio < 0.99 && (
               <div style={{
                 position: 'absolute', top: 0, bottom: 0,
                 width: '40%',
@@ -1819,19 +2018,19 @@ export default function DersProgramlari() {
             )}
           </div>
 
-          {/* Bottom row: combination count + hint */}
+          {/* Bottom row: ikincil bilgiler + durdur */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {[0, 1, 2].map(i => (
                 <div key={i} style={{
                   width: 4, height: 4, borderRadius: '50%',
-                  background: '#4f46e5',
+                  background: 'var(--accent-2)',
                   animation: `barPulse 1.2s ease-in-out ${i * 0.2}s infinite`,
                   opacity: 0.7,
                 }} />
               ))}
               <span style={{ fontSize: 12, color: '#64748b', marginLeft: 4 }}>
-                {triedCount > 0 ? `${triedCount} kombinasyon denendi` : 'Başlatılıyor…'}
+                {triedCount > 0 ? `${elapsedTime}s · ${triedCount} deneme yapıldı` : 'Başlatılıyor…'}
               </span>
             </div>
             <button
@@ -1867,6 +2066,7 @@ export default function DersProgramlari() {
             border: `1.5px solid ${lastResult.success ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 16,
+            animation: lastResult.success ? 'lockPop 0.5s ease' : undefined,
           }}>
             {lastResult.success ? '✓' : '!'}
           </div>
