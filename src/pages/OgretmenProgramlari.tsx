@@ -6,22 +6,11 @@ import type { Day, Teacher } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
 import { calculateTeacherSchedules, formatClassName, formatTimeSlot, getSubjectAbbreviation } from '../shared/pdfUtils'
 import { generateTeacherHandbookHTML, generateTeacherSheetHTML } from '../shared/htmlPdfGenerator'
+import LockIcon from '../components/LockIcon'
 
 const DAYS: Day[] = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma']
 
 type Cell = { subjectId?: string; teacherId?: string }
-
-const LockIcon = ({ locked }: { locked: boolean }) => locked ? (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-  </svg>
-) : (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-  </svg>
-)
 
 function UtilizationBar({ pct, available, actual }: { pct: number; available: number; actual: number }) {
   const color = pct >= 0.95 ? '#ef4444' : pct >= 0.80 ? '#f97316' : pct >= 0.60 ? '#eab308' : '#22c55e'

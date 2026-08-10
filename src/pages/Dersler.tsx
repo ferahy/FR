@@ -359,6 +359,15 @@ function SubjectModal({
   const isMaxConsecutiveLimited = state.maxConsecutive !== '0'
   const isMinDaysLimited = state.minDays !== '0'
 
+  // Blok yerleştirme yalnızca bir sınıf için haftalık ders saati tam olarak 2
+  // olduğunda anlamlı (yardım metninde de belirtildiği gibi); değilse alanı
+  // gizle ki kullanıcı kafası karışmasın.
+  const blockEligible = grades.some((g) => {
+    if (!state.enabledByGrade[g]) return false
+    const h = parseInt(state.weeklyHoursByGrade[g] || '0', 10)
+    return h === 2
+  })
+
   // Reset when opening with different initial
   const prevId = useRef<string | undefined>(initial?.id)
   if (prevId.current !== initial?.id) {
@@ -404,7 +413,7 @@ function SubjectModal({
       pushToast({ kind: 'error', text: 'Lütfen hatalı alanları düzeltin' })
       return
     }
-    onSave(state)
+    onSave(blockEligible ? state : { ...state, preferBlockScheduling: false })
   }
 
   return (
@@ -626,16 +635,18 @@ function SubjectModal({
             </div>
           </div>
         </div>
-        <div className="field-row">
-          <div className="field" style={{ flex: '1 1 240px' }}>
-            <span className="field-label">Aynı Gün Blok Yerleştirme</span>
-            <div className="help-text" style={{ marginTop: 4 }}><strong>Bilgi:</strong> Açıkken haftalık 2 saatlik dersler aynı gün arka arkaya yerleştirilir (örn: Beden Eğitimi).</div>
-            <div className="segmented" role="group" aria-label="Blok yerleştirme modu">
-              <button type="button" className={"seg " + (!state.preferBlockScheduling ? 'active blocked' : '')} aria-pressed={!state.preferBlockScheduling} onClick={() => setState((s) => ({ ...s, preferBlockScheduling: false }))}>Kapalı</button>
-              <button type="button" className={"seg " + (state.preferBlockScheduling ? 'active free' : '')} aria-pressed={state.preferBlockScheduling} onClick={() => setState((s) => ({ ...s, preferBlockScheduling: true }))}>Açık</button>
+        {blockEligible && (
+          <div className="field-row">
+            <div className="field" style={{ flex: '1 1 240px' }}>
+              <span className="field-label">Aynı Gün Blok Yerleştirme</span>
+              <div className="help-text" style={{ marginTop: 4 }}><strong>Bilgi:</strong> Açıkken haftalık 2 saatlik dersler aynı gün arka arkaya yerleştirilir (örn: Beden Eğitimi).</div>
+              <div className="segmented" role="group" aria-label="Blok yerleştirme modu">
+                <button type="button" className={"seg " + (!state.preferBlockScheduling ? 'active blocked' : '')} aria-pressed={!state.preferBlockScheduling} onClick={() => setState((s) => ({ ...s, preferBlockScheduling: false }))}>Kapalı</button>
+                <button type="button" className={"seg " + (state.preferBlockScheduling ? 'active free' : '')} aria-pressed={state.preferBlockScheduling} onClick={() => setState((s) => ({ ...s, preferBlockScheduling: true }))}>Açık</button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="field">
           <span className="field-label">Kaçınılacak Saatler</span>

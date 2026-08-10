@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from '../components/Modal'
+import Toasts, { pushToast } from '../components/Toast'
+import LockIcon from '../components/LockIcon'
 import { useSchool } from '../shared/useSchool'
 import { useGrades } from '../shared/useGrades'
 import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
 import { useAssignments } from '../shared/useAssignments'
-import type { Day, Teacher } from '../shared/types'
+import type { Day, Subject, Teacher } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
 import { generateClassHandbookHTML, generateClassSheetHTML } from '../shared/htmlPdfGenerator'
 import { getSubjectAbbreviation, getTeacherAbbreviation } from '../shared/pdfUtils'
@@ -14,6 +16,7 @@ const DAYS: Day[] = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma']
 
 type Cell = { subjectId?: string; teacherId?: string }
 type ClassKey = string // e.g. "5-A"
+type CellRef = { classKey: ClassKey; day: Day; si: number }
 
 export default function DersProgramlari() {
   const school = useSchool()
@@ -27,6 +30,50 @@ export default function DersProgramlari() {
 
   const [tables, setTables] = useLocalStorage<Record<ClassKey, Record<Day, Cell[]>>>('timetables', {})
   const [lockedTeachers] = useLocalStorage<string[]>('lockedTeachers', [])
+  const [lockedCells, setLockedCells] = useLocalStorage<string[]>('lockedCells', [])
+  const lockedCellSet = useMemo(() => new Set(lockedCells), [lockedCells])
+  const isCellLocked = (classKey: ClassKey, day: Day, si: number) =>
+    lockedCellSet.has(`${classKey}|${day}|${si}`)
+  const toggleCellLock = (classKey: ClassKey, day: Day, si: number) => {
+    // Hücre 2 saatlik bir bloğun (ör. Beden Eğitimi) parçasıysa, kilidi
+    // her iki hücreye birden uygula/kaldır — sadece yarısını kilitlemek
+    // bloğu parçalanmaya açık bırakır.
+    const dayCells = tables[classKey]?.[day]
+    const cell = dayCells?.[si]
+    const keys = [`${classKey}|${day}|${si}`]
+    if (cell?.subjectId && dayCells) {
+      const next = dayCells[si + 1]
+      const prev = dayCells[si - 1]
+      if (next && next.subjectId === cell.subjectId && next.teacherId === cell.teacherId) {
+        keys.push(`${classKey}|${day}|${si + 1}`)
+      } else if (prev && prev.subjectId === cell.subjectId && prev.teacherId === cell.teacherId) {
+        keys.push(`${classKey}|${day}|${si - 1}`)
+      }
+    }
+    setLockedCells((prevLocked) => {
+      const isLocked = prevLocked.includes(keys[0])
+      if (isLocked) return prevLocked.filter((k) => !keys.includes(k))
+      const toAdd = keys.filter((k) => !prevLocked.includes(k))
+      return [...prevLocked, ...toAdd]
+    })
+  }
+  const clearAllCellLocks = () => setLockedCells([])
+
+  // Sürükle-bırak / dokunarak taşıma için geçici arayüz durumu
+  const [dragSource, setDragSource] = useState<CellRef | null>(null)
+  const [dragOverTarget, setDragOverTarget] = useState<CellRef | null>(null)
+  const [flashCells, setFlashCells] = useState<Set<string>>(new Set())
+  const [shakeCells, setShakeCells] = useState<Set<string>>(new Set())
+  const [tapSelected, setTapSelected] = useState<CellRef | null>(null)
+  // Bir ders seçilip taşınmaya başlandığında, o dersin gerçekten
+  // konabileceği tüm hücrelerin anahtarları (kurallar canlı olarak
+  // kontrol edilerek hesaplanır) — "nereye koyabilirim" önizlemesi için.
+  const [validTargets, setValidTargets] = useState<Set<string> | null>(null)
+  // Kaynak bir blok (2 saatlik) dersse: her geçerli hedef hücrenin anahtarını,
+  // o hedefin ait olduğu çiftin BAŞLANGIÇ slotuna eşler. Render'ı tetiklemesi
+  // gerekmez (sadece drop anında okunur), bu yüzden state değil ref.
+  const blockTargetStarts = useRef<Map<string, number>>(new Map())
+
   const [gradeFilter, setGradeFilter] = useState<string>('all')
   const [showSheet, setShowSheet] = useState(false)
   const [requirementsGrade, setRequirementsGrade] = useState<string | null>(null)
@@ -151,7 +198,10 @@ export default function DersProgramlari() {
     return arr
   }
 
-  const runOnce = (seed: number) => {
+  const runOnce = (
+    seed: number,
+    opts?: { seedTables?: Record<ClassKey, Record<Day, Cell[]>>; saBudgetMs?: number }
+  ) => {
     const rng = makeRng(seed)
     const dayOrder = shuffleInPlace([...DAYS], rng)
     const slotOrder = shuffleInPlace(Array.from({ length: slots.length }, (_, i) => i), rng)
@@ -351,11 +401,33 @@ export default function DersProgramlari() {
     for (const gid of allGradeIds) {
       sectionCountByGrade.set(gid, classes.filter(c => c.grade === gid).length)
     }
+    // Atama tablosundan (Atamalar sayfası) öğretmen başına KESİN yük hesapla —
+    // bu, "uygun havuzdaki tahmini yük" hesabından çok daha doğru bir kıtlık
+    // sinyali verir, çünkü bu okullarda genelde her sınıf-ders sabit bir
+    // öğretmene atanmış olur (serbest seçim değil).
+    const assignedHoursByTeacher = new Map<string, number>()
+    const coveredClassSubjects = new Set<string>() // "classKey|subjId" — atama var mı?
+    for (const c of classes) {
+      for (const s of subjects) {
+        const csKey = `${c.key}|${s.id}`
+        const assignedTeacherId = assignments[csKey]
+        if (!assignedTeacherId) continue
+        coveredClassSubjects.add(csKey)
+        const hours = s.weeklyHoursByGrade[c.grade] ?? 0
+        if (hours <= 0) continue
+        assignedHoursByTeacher.set(assignedTeacherId, (assignedHoursByTeacher.get(assignedTeacherId) ?? 0) + hours)
+      }
+    }
+
     const teacherLoadRatio = new Map<string, number>()
     for (const t of teachers) {
       const unavailCount = DAYS.reduce((sum, d) => sum + (t.unavailable?.[d]?.length ?? 0), 0)
       const available = Math.max(1, DAYS.length * slots.length - unavailCount)
-      let totalReq = 0
+      // Atanmış (kesin) saatlerle başla; atama tablosunda yer almayan
+      // sınıf-ders kombinasyonları için eski tahmini (serbest seçim) modeli
+      // kullan — böylece karışık kullanımda (bazı dersler atanmış, bazıları
+      // değil) çift sayım olmaz.
+      let totalReq = assignedHoursByTeacher.get(t.id) ?? 0
       for (const sid of getTeacherSubjectIds(t)) {
         const subj = subjects.find(s => s.id === sid)
         if (!subj) continue
@@ -366,10 +438,29 @@ export default function DersProgramlari() {
             ? t.preferredGrades
             : allGradeIds
         for (const gid of coveredGrades) {
-          totalReq += (subj.weeklyHoursByGrade?.[gid] ?? 0) * (sectionCountByGrade.get(gid) ?? 1)
+          const hours = subj.weeklyHoursByGrade?.[gid] ?? 0
+          if (hours <= 0) continue
+          for (const c of classes) {
+            if (c.grade !== gid) continue
+            if (coveredClassSubjects.has(`${c.key}|${sid}`)) continue
+            totalReq += hours
+          }
         }
       }
       teacherLoadRatio.set(t.id, totalReq / available)
+    }
+
+    // Sınıf-ders kombinasyonu atama tablosunda sabitlenmişse, o dersin
+    // gerçek yoğunluk sinyali doğrudan atanan öğretmenin oranıdır (havuzdaki
+    // "en yoğun ihtimal" tahminine gerek yok — kesin cevap zaten belli).
+    const assignedTeacherScarcity = new Map<string, number>() // "classKey|subjId" -> ratio
+    for (const c of classes) {
+      for (const s of subjects) {
+        const csKey = `${c.key}|${s.id}`
+        const tId = assignments[csKey]
+        if (!tId) continue
+        assignedTeacherScarcity.set(csKey, teacherLoadRatio.get(tId) ?? 0)
+      }
     }
 
     // Her ders+sınıf kombinasyonu için: uygun öğretmenler arasında max yoğunluk oranı
@@ -390,17 +481,26 @@ export default function DersProgramlari() {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // KİLİTLİ ÖĞRETMEN SLOTLARINI ÖN YERLEŞTIR
+    // KİLİTLİ ÖĞRETMEN + KİLİTLİ HÜCRE SLOTLARINI ÖN YERLEŞTIR
+    // (opts.seedTables verildiyse: sıfırdan Faz 1 kurmak yerine mevcut en iyi
+    // çözümü olduğu gibi başlangıç noktası yap. generate()'in "cilalama"
+    // modu bunu kullanır — geniş SA bütçesiyle var olan iyi bir çözümü
+    // üzerinde çalışıp iyileştirmeyi dener, sıfırdan şansını denemek yerine.)
     // ═══════════════════════════════════════════════════════════════
-    if (lockedTeachers.length > 0) {
+    const seedTables = opts?.seedTables
+    if (seedTables || lockedTeachers.length > 0 || lockedCellSet.size > 0) {
       for (const c of classes) {
         for (const day of DAYS) {
-          const existingDay = tables[c.key]?.[day]
+          const existingDay = (seedTables ?? tables)[c.key]?.[day]
           if (!existingDay) continue
           for (let si = 0; si < existingDay.length; si++) {
             const cell = existingDay[si]
             if (!cell?.subjectId || !cell.teacherId) continue
-            if (!lockedTeachers.includes(cell.teacherId)) continue
+            if (!seedTables) {
+              const teacherLocked = lockedTeachers.includes(cell.teacherId)
+              const cellLocked = isCellLocked(c.key, day, si)
+              if (!teacherLocked && !cellLocked) continue
+            }
             placeCell(c.key, day, si, cell.subjectId, cell.teacherId)
           }
         }
@@ -475,10 +575,12 @@ export default function DersProgramlari() {
 
     // Öncelik sıralama - stable sort ile shuffle etkisi korunur
     allLessons.sort((a, b) => {
-      // 1. Yoğunluğu yüksek öğretmenin dersleri önce (en kritik kısıt)
-      //    Yoğunluk = toplam zorunlu saat / müsait slot oranı (>1 = fazla yüklü)
-      const la = maxTeacherLoadBySubjectGrade.get(`${a.subjId}|${a.gradeId}`) ?? 0
-      const lb = maxTeacherLoadBySubjectGrade.get(`${b.subjId}|${b.gradeId}`) ?? 0
+      // 1. Yoğunluğu yüksek öğretmenin dersleri önce (en kritik kısıt) —
+      //    Atama tablosunda sabit bir öğretmen varsa onun GERÇEK oranını
+      //    kullan (en kesin sinyal); yoksa uygun havuzdaki en yoğun
+      //    ihtimale göre tahmin et. Yoğunluk = zorunlu saat / müsait slot.
+      const la = assignedTeacherScarcity.get(`${a.classKey}|${a.subjId}`) ?? maxTeacherLoadBySubjectGrade.get(`${a.subjId}|${a.gradeId}`) ?? 0
+      const lb = assignedTeacherScarcity.get(`${b.classKey}|${b.subjId}`) ?? maxTeacherLoadBySubjectGrade.get(`${b.subjId}|${b.gradeId}`) ?? 0
       if (Math.abs(la - lb) > 0.02) return lb - la
       // 2. En kısıtlı (çok kapalı slot) öğretmenlere ait dersler önce
       const sa = scarcityBySubjectGrade.get(`${a.subjId}|${a.gradeId}`) ?? 0
@@ -752,6 +854,7 @@ export default function DersProgramlari() {
     }
 
     const tryRelocateSingle = (classKey: ClassKey, day: Day, si: number): boolean => {
+      if (isCellLocked(classKey, day, si)) return false
       const current = workingTables[classKey][day][si]
       if (!current?.subjectId || !current.teacherId) return false
       const subjId = current.subjectId
@@ -789,6 +892,7 @@ export default function DersProgramlari() {
 
     // Zincir halinde kaydırma: Bir dersi kaydırıp, onun yerini de başka dersle doldur
     const tryChainRelocate = (classKey: ClassKey, day: Day, si: number): boolean => {
+      if (isCellLocked(classKey, day, si)) return false
       const current = workingTables[classKey][day][si]
       if (!current?.subjectId || !current.teacherId) return false
       const subjId = current.subjectId
@@ -826,6 +930,7 @@ export default function DersProgramlari() {
           }
 
           // Hedef slottaki dersi başka yere taşıyabilir miyiz?
+          if (isCellLocked(classKey, d2, s2)) continue
           const targetSubjId = target.subjectId
           const targetTeacherId = target.teacherId
           if (!targetTeacherId) continue
@@ -876,6 +981,69 @@ export default function DersProgramlari() {
               return true
             }
           }
+        }
+      }
+      return false
+    }
+
+    // tryRelocateSingle/tryChainRelocate bilerek blok derslerin (2 saatlik,
+    // aynı öğretmen) parçalarına hiç dokunmuyor — bir bloğu bozmadan taşımak
+    // farklı bir mantık gerektiriyor. Bu yüzden bir blok "yanlış" günde
+    // kilitli kalıp o günün geri kalan boşluklarını başka bir derse hiç
+    // vermeden tutabiliyor (özellikle her sınıfın haftası tam doluyken, ki
+    // bu durumda başka hiçbir onarım hamlesi bloğu es geçip devam edemiyor).
+    // Bu fonksiyon bloğu bütün halinde, zaten boş olan başka bir gün+saat
+    // çiftine taşımayı dener.
+    const tryRelocateBlockPair = (classKey: ClassKey, day: Day, si: number): boolean => {
+      const cell = workingTables[classKey][day][si]
+      if (!cell?.subjectId || !cell.teacherId) return false
+      const sameDay = workingTables[classKey][day]
+      let blockStart = -1
+      if (si + 1 < sameDay.length && sameDay[si + 1]?.subjectId === cell.subjectId && sameDay[si + 1]?.teacherId === cell.teacherId) {
+        blockStart = si
+      } else if (si - 1 >= 0 && sameDay[si - 1]?.subjectId === cell.subjectId && sameDay[si - 1]?.teacherId === cell.teacherId) {
+        blockStart = si - 1
+      }
+      if (blockStart === -1) return false // blok değil, tek ders — bu fonksiyonun işi değil
+
+      if (isCellLocked(classKey, day, blockStart) || isCellLocked(classKey, day, blockStart + 1)) return false
+
+      const subjId = cell.subjectId
+      const teacherId = cell.teacherId
+      const teacher = teachers.find(t => t.id === teacherId)
+
+      for (const day2 of DAYS) {
+        if (day2 === day) continue
+        for (let si2 = 0; si2 < slots.length - 1; si2++) {
+          if (!isFree(classKey, day2, si2) || !isFree(classKey, day2, si2 + 1)) continue
+          if (!canPlaceWithRules(classKey, day2, si2, subjId, true)) continue
+
+          const occKey1 = `${day2}-${si2}`
+          const occKey2 = `${day2}-${si2 + 1}`
+          if (teacherOccupied.get(teacherId)?.has(occKey1)) continue
+          if (teacherOccupied.get(teacherId)?.has(occKey2)) continue
+          if (teacher?.unavailable?.[day2]?.includes(`S${si2 + 1}`)) continue
+          if (teacher?.unavailable?.[day2]?.includes(`S${si2 + 2}`)) continue
+          const tcdKeyNew = `${teacherId}|${classKey}|${day2}`
+          if ((teacherClassDayCount.get(tcdKeyNew) ?? 0) >= 3) continue
+
+          workingTables[classKey][day2][si2] = { subjectId: subjId, teacherId }
+          workingTables[classKey][day2][si2 + 1] = { subjectId: subjId, teacherId }
+          workingTables[classKey][day][blockStart] = {}
+          workingTables[classKey][day][blockStart + 1] = {}
+
+          teacherOccupied.get(teacherId)?.delete(`${day}-${blockStart}`)
+          teacherOccupied.get(teacherId)?.delete(`${day}-${blockStart + 1}`)
+          if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
+          teacherOccupied.get(teacherId)!.add(occKey1)
+          teacherOccupied.get(teacherId)!.add(occKey2)
+
+          const tcdKeyOld = `${teacherId}|${classKey}|${day}`
+          teacherClassDayCount.set(tcdKeyOld, Math.max(0, (teacherClassDayCount.get(tcdKeyOld) ?? 0) - 2))
+          teacherClassDayCount.set(tcdKeyNew, (teacherClassDayCount.get(tcdKeyNew) ?? 0) + 2)
+
+          recomputeSubjectDays(classKey, subjId)
+          return true
         }
       }
       return false
@@ -941,7 +1109,14 @@ export default function DersProgramlari() {
             stillUnplaced.push({ ...lesson, isBlock: false })
           }
         }
-      } else {
+      } else if (isBlock && !placed && isMandatory) {
+        // Beden gibi zorunlu blok dersler burada ASLA tek saate düşürülmemeli:
+        // bunu tek ders gibi yerleştirirsek diğer saati çok sonra, habersizce
+        // başka bir güne/saate koyarız ve "arka arkaya" garantisi bozulur.
+        // Bütün 2 saatlik dersi olduğu gibi sonraki fazlara bırak (orada da
+        // yalnızca blok olarak denenecek).
+        stillUnplaced.push(lesson)
+      } else if (!isBlock && !placed) {
         // Tek ders - herhangi bir boş slota koy
         for (const day of dayOrder) {
           if (placed) break
@@ -967,6 +1142,8 @@ export default function DersProgramlari() {
     for (const lesson of stillUnplaced) {
       const { classKey, subjId, isBlock } = lesson
       const gradeId = classGradeMap.get(classKey) ?? ''
+      const subjForMandatoryCheck = subjects.find(s => s.id === subjId)
+      const isMandatory = subjForMandatoryCheck ? isMandatoryBlock(subjForMandatoryCheck, gradeId) : false
       let placedHere = false
 
       if (isBlock) {
@@ -990,7 +1167,9 @@ export default function DersProgramlari() {
         }
       }
 
-      if (!placedHere) {
+      // Beden gibi zorunlu blok dersler burada da tekli/dağınık saatlere
+      // bölünmesin; blok denemesi başarısızsa bütün olarak sonraki faza bırak.
+      if (!placedHere && !(isBlock && isMandatory)) {
         const neededCount = isBlock ? 2 : 1
         let placedCount = 0
         for (const day of dayOrder) {
@@ -1170,6 +1349,7 @@ export default function DersProgramlari() {
       const blocker = findTeacherBlocker(teacherId, day, si)
       if (!blocker) return false
       const { classKey: bck, subjId: bsid } = blocker
+      if (isCellLocked(bck, day, si)) return false
 
       // Blok dersin ortasına dokunma
       const bDay = workingTables[bck][day]
@@ -1266,14 +1446,22 @@ export default function DersProgramlari() {
 
           // Adım 1: si slotunu boşalt
           if (!isFree(classKey, day, si)) {
-            if (!tryRelocateSingle(classKey, day, si) && !tryChainRelocate(classKey, day, si)) continue
+            if (
+              !tryRelocateSingle(classKey, day, si) &&
+              !tryChainRelocate(classKey, day, si) &&
+              !tryRelocateBlockPair(classKey, day, si)
+            ) continue
           }
           if (!isFree(classKey, day, si)) continue
 
           // Adım 2 (blok): si+1 slotunu boşalt
           if (isBlock) {
             if (!isFree(classKey, day, si + 1)) {
-              if (!tryRelocateSingle(classKey, day, si + 1) && !tryChainRelocate(classKey, day, si + 1)) continue
+              if (
+                !tryRelocateSingle(classKey, day, si + 1) &&
+                !tryChainRelocate(classKey, day, si + 1) &&
+                !tryRelocateBlockPair(classKey, day, si + 1)
+              ) continue
             }
             if (!isFree(classKey, day, si + 1)) continue
           }
@@ -1409,6 +1597,18 @@ export default function DersProgramlari() {
                   progress = true
                   break
                 }
+
+                if (tryRelocateBlockPair(c.key, day, si)) {
+                  if (!canPlaceWithRules(c.key, day, si, s.id, false)) continue
+                  const teacherId = findTeacherForSlot(c.key, s.id, gradeId, day, si)
+                  if (!teacherId) continue
+                  placeCell(c.key, day, si, s.id, teacherId)
+                  missing -= 1
+                  currentCounts[s.id] = (currentCounts[s.id] ?? 0) + 1
+                  placed = true
+                  progress = true
+                  break
+                }
               }
             }
             if (!placed) break
@@ -1503,6 +1703,7 @@ export default function DersProgramlari() {
           const si = Math.floor(rng() * slots.length)
           const cell = workingTables[c.key][day][si]
           if (!cell?.subjectId || !cell.teacherId) continue
+          if (isCellLocked(c.key, day, si)) continue
           const dayCells = workingTables[c.key][day]
           const isBlockPart =
             (si + 1 < dayCells.length && dayCells[si + 1]?.subjectId === cell.subjectId && dayCells[si + 1]?.teacherId === cell.teacherId) ||
@@ -1520,8 +1721,10 @@ export default function DersProgramlari() {
       const T_START = 1.2
       const COOL = 0.97
       const T_MIN = 0.05
-      const MAX_ITERS = 200
-      const TIME_BUDGET_MS = 15
+      const TIME_BUDGET_MS = opts?.saBudgetMs ?? 15
+      // Cilalama modunda (büyük saBudgetMs) çok daha fazla iterasyona izin ver —
+      // aksi halde MAX_ITERS düşük kalırsa süre bütçesinin çoğu boşa gider.
+      const MAX_ITERS = opts?.saBudgetMs ? Math.max(200, Math.ceil(opts.saBudgetMs * 40)) : 200
       const CHECK_EVERY = 25
 
       let temperature = T_START
@@ -1669,6 +1872,19 @@ export default function DersProgramlari() {
     const makeSignature = (defs: { classKey: string; deficits: { name: string; missing: number }[] }[]) =>
       defs.map(d => `${d.classKey}:${d.deficits.map(x => `${x.name}:${x.missing}`).join('|')}`).sort().join('||')
 
+    // Sıfırdan-kurma (restart) taraması bir noktadan sonra çıkmaza girebilir:
+    // her deneme %95+ dolu ama son birkaç saat bir türlü oturmuyor (özellikle
+    // her sınıfın haftası tam dolu olduğunda — boşluk yok, tek bir yanlış
+    // erken karar telafisiz kalabiliyor). Bu durumda yeni bir rastgele kurulum
+    // denemek yerine, elimizdeki en iyi çözüm üzerinde çok daha uzun bir
+    // simulated annealing turu ("cilalama") çalıştırmak çok daha etkili:
+    // SA'ya sıfırdan başlamak yerine zaten %95+ tamamlanmış bir duruma devam
+    // etme fırsatı veriyoruz. İlerleme durursa modlar arasında geçiş yaparız.
+    let mode: 'restart' | 'polish' = 'restart'
+    let stuckTicks = 0
+    const RESTART_STUCK_LIMIT = 6
+    const POLISH_STUCK_LIMIT = 10
+
     const finish = (now: number) => {
       const duration = Math.round((now - start) / 1000)
       setTables(best.tables)
@@ -1697,7 +1913,7 @@ export default function DersProgramlari() {
         })
         return
       }
-      if (now - start > 600000) {
+      if (now - start > 900000) {
         const duration = finish(now)
         setLastResult({
           success: best.totalMissing === 0,
@@ -1709,32 +1925,67 @@ export default function DersProgramlari() {
         return
       }
 
-      // 50 deneme/tick — artık her deneme sonunda kısa bir simulated annealing
-      // iyileştirmesi de çalışabiliyor (bkz. runOnce PHASE 8), bu yüzden batch
-      // boyutu küçültüldü: tek bir tick'in en kötü ihtimalle süresi sınırlı
-      // kalır ve ilerleme çubuğu daha sık güncellenir.
-      for (let i = 0; i < 50; i++) {
-        tried += 1
-        const currentSeed = xorNext()
-        const res = runOnce(currentSeed)
+      const missingBeforeTick = best.totalMissing
 
-        const signature = makeSignature(res.deficits)
-        if (seenSignatures.has(signature)) continue
-        seenSignatures.add(signature)
+      if (mode === 'restart') {
+        // 50 deneme/tick — artık her deneme sonunda kısa bir simulated annealing
+        // iyileştirmesi de çalışabiliyor (bkz. runOnce PHASE 8), bu yüzden batch
+        // boyutu küçültüldü: tek bir tick'in en kötü ihtimalle süresi sınırlı
+        // kalır ve ilerleme çubuğu daha sık güncellenir.
+        for (let i = 0; i < 50; i++) {
+          tried += 1
+          const currentSeed = xorNext()
+          const res = runOnce(currentSeed)
 
-        // Signature havuzu çok büyürse eski yarısını temizle (yeni kombinasyonlara yer aç)
-        if (seenSignatures.size > 8000) {
-          const arr = Array.from(seenSignatures)
-          arr.slice(0, 3000).forEach(s => seenSignatures.delete(s))
+          const signature = makeSignature(res.deficits)
+          if (seenSignatures.has(signature)) continue
+          seenSignatures.add(signature)
+
+          // Signature havuzu çok büyürse eski yarısını temizle (yeni kombinasyonlara yer aç)
+          if (seenSignatures.size > 8000) {
+            const arr = Array.from(seenSignatures)
+            arr.slice(0, 3000).forEach(s => seenSignatures.delete(s))
+          }
+
+          if (res.totalMissing < best.totalMissing) {
+            best = res
+            setTables(best.tables)
+            setBestMissing(best.totalMissing)
+          }
+
+          if (best.totalMissing === 0) break
         }
+      } else {
+        // CİLALAMA MODU: sıfırdan yeni bir kurulum denemek yerine, elimizdeki
+        // en iyi çözümü başlangıç noktası alıp üzerinde çok daha uzun
+        // (300ms'lik) bir simulated annealing turu çalıştırıyoruz. Her deneme
+        // farklı bir rastgele hamle dizisiyle aynı iyi başlangıçtan yola çıkar.
+        for (let i = 0; i < 6; i++) {
+          tried += 1
+          const currentSeed = xorNext()
+          const res = runOnce(currentSeed, { seedTables: best.tables, saBudgetMs: 300 })
 
-        if (res.totalMissing < best.totalMissing) {
-          best = res
-          setTables(best.tables)
-          setBestMissing(best.totalMissing)
+          if (res.totalMissing < best.totalMissing) {
+            best = res
+            setTables(best.tables)
+            setBestMissing(best.totalMissing)
+          }
+
+          if (best.totalMissing === 0) break
         }
+      }
 
-        if (best.totalMissing === 0) break
+      if (best.totalMissing < missingBeforeTick) {
+        stuckTicks = 0
+      } else {
+        stuckTicks += 1
+        if (mode === 'restart' && stuckTicks >= RESTART_STUCK_LIMIT) {
+          mode = 'polish'
+          stuckTicks = 0
+        } else if (mode === 'polish' && stuckTicks >= POLISH_STUCK_LIMIT) {
+          mode = 'restart'
+          stuckTicks = 0
+        }
       }
 
       setTriedCount(tried)
@@ -1764,7 +2015,7 @@ export default function DersProgramlari() {
   const totalDeficits = classDeficits.reduce((sum, item) => sum + item.deficits.length, 0)
 
   // İlerleme çubuğu artık geçen süre yerine gerçekte kaç ders saatinin
-  // yerleştiğini gösterir (0-600s'lik zaman sınırı değil, dersler/toplam oranı)
+  // yerleştiğini gösterir (0-900s'lik zaman sınırı değil, dersler/toplam oranı)
   const placementRatio = totalReqState > 0
     ? Math.min(1, Math.max(0, (totalReqState - bestMissing) / totalReqState))
     : 0
@@ -1784,21 +2035,26 @@ export default function DersProgramlari() {
     return { total, assigned, missing: total - assigned }
   }, [classes, subjects, assignments])
 
-  const placementSuggestions = useMemo(() => {
+  const placementHints = useMemo(() => {
     if (!Object.keys(tables ?? {}).length) return []
 
     const teacherBusy = new Map<string, Set<string>>() // teacherId -> Set(day-slot)
-    for (const [, schedule] of Object.entries(tables)) {
+    const teacherBusyClass = new Map<string, ClassKey>() // "teacherId|day-slot" -> hangi sınıf o saati tutuyor
+    for (const [classKey, schedule] of Object.entries(tables)) {
       for (const day of DAYS) {
         schedule[day]?.forEach((cell, si) => {
           if (!cell?.teacherId) return
           if (!teacherBusy.has(cell.teacherId)) teacherBusy.set(cell.teacherId, new Set())
           teacherBusy.get(cell.teacherId)!.add(`${day}-${si}`)
+          teacherBusyClass.set(`${cell.teacherId}|${day}-${si}`, classKey)
         })
       }
     }
 
-    const suggestions: string[] = []
+    // Her öneri, mümkünse "hangi ders taşınırsa yer açılır" (blockerKey) bilgisini
+    // de taşır — bu, aşağıdaki tabloda o dersin hücresini amber renkle
+    // vurgulamak için kullanılır (metni okumadan doğrudan programda görünür).
+    const suggestions: { text: string; blockerKey?: string }[] = []
     const seen = new Set<string>()
 
     const getGradeOfClass = (ck: string) => ck.split('-')[0]
@@ -1844,16 +2100,22 @@ export default function DersProgramlari() {
             if (unavailable && !busy) {
               const key = `${item.classKey}-${subj.id}-${teacher.id}-${slot.day}-${slot.si}-unavail`
               if (!seen.has(key)) {
-                suggestions.push(`${item.classKey} ${subj.name}: ${teacher.name} için ${slot.day} S${slot.si + 1} açılırsa yerleşebilir.`)
+                suggestions.push({ text: `${item.classKey} ${subj.name}: ${teacher.name} için ${slot.day} S${slot.si + 1} açılırsa yerleşebilir.` })
                 seen.add(key)
               }
             }
 
-            // Çakışma varsa bilgi ver
+            // Çakışma varsa, hangi sınıfın dersinin taşınması gerektiğini adıyla söyle
             if (!unavailable && busy) {
               const key = `${item.classKey}-${subj.id}-${teacher.id}-${slot.day}-${slot.si}-busy`
               if (!seen.has(key)) {
-                suggestions.push(`${item.classKey} ${subj.name}: ${teacher.name} aynı saatte başka sınıfta ( ${slot.day} S${slot.si + 1} ). Bu saat boşaltılırsa yerleşebilir.`)
+                const blockingClassKey = teacherBusyClass.get(`${teacher.id}|${slot.day}-${slot.si}`)
+                const blockingLabel = blockingClassKey ? `${blockingClassKey} sınıfında` : 'başka bir sınıfta'
+                const blockerKey = blockingClassKey ? `${blockingClassKey}|${slot.day}|${slot.si}` : undefined
+                suggestions.push({
+                  text: `${item.classKey} ${subj.name}: ${teacher.name} aynı saatte ${blockingLabel} ders veriyor (${slot.day} S${slot.si + 1}). Bu ders taşınırsa yerleşebilir.`,
+                  blockerKey,
+                })
                 seen.add(key)
               }
             }
@@ -1869,8 +2131,592 @@ export default function DersProgramlari() {
     return suggestions
   }, [tables, classDeficits, subjects, teachers])
 
+  // Öneriler içindeki "bu ders taşınırsa yer açılır" işaretli hücrelerin
+  // anahtarları — programda doğrudan amber renkte yanıp sönerek gösterilir.
+  const placementBlockerCells = useMemo(() => {
+    const set = new Set<string>()
+    placementHints.forEach((h) => { if (h.blockerKey) set.add(h.blockerKey) })
+    return set
+  }, [placementHints])
+
+  // ═══════════════════════════════════════════════════════════════
+  // MANUEL DÜZENLEME: sürükle-bırak / dokunarak taşıma + hücre kilitleme
+  // Faz 1-7 + 8 (üretim algoritması) ile aynı kuralları (günlük üst sınır,
+  // en az gün, üst üste limit, bitişiklik, kaçınılacak saat, öğretmen
+  // uygunluğu/çakışması) canlı `tables` durumu üzerinde yeniden değerlendirir.
+  // ═══════════════════════════════════════════════════════════════
+  const sameCell = (a: CellRef, b: CellRef) =>
+    a.classKey === b.classKey && a.day === b.day && a.si === b.si
+  const cellKeyOf = (r: CellRef) => `${r.classKey}|${r.day}|${r.si}`
+
+  // Bir hücre 2 saatlik bir bloğun (ör. Beden Eğitimi) parçasıysa, bloğun
+  // [başlangıç, bitiş] slot indekslerini döner — değilse null. Sürükle-bırak
+  // artık blokları tek parça olarak taşıyabildiği için (bkz. computeValidTargets/
+  // attemptBlockPlacement) bu, "hangi iki hücre birlikte hareket etmeli" sorusunun
+  // tek kaynağı.
+  const getBlockBounds = (classKey: ClassKey, day: Day, si: number): [number, number] | null => {
+    const dayCells = tables[classKey]?.[day]
+    const cell = dayCells?.[si]
+    if (!cell?.subjectId || !cell.teacherId) return null
+    const next = dayCells[si + 1]
+    const prev = dayCells[si - 1]
+    if (next && next.subjectId === cell.subjectId && next.teacherId === cell.teacherId) return [si, si + 1]
+    if (prev && prev.subjectId === cell.subjectId && prev.teacherId === cell.teacherId) return [si - 1, si]
+    return null
+  }
+
+  const isBlockCell = (classKey: ClassKey, day: Day, si: number): boolean =>
+    getBlockBounds(classKey, day, si) !== null
+
+  const isDraggableCell = (classKey: ClassKey, day: Day, si: number): boolean => {
+    const cell = tables[classKey]?.[day]?.[si]
+    if (!cell?.subjectId) return false
+    const bounds = getBlockBounds(classKey, day, si)
+    if (bounds) return !isCellLocked(classKey, day, bounds[0]) && !isCellLocked(classKey, day, bounds[1])
+    return !isCellLocked(classKey, day, si)
+  }
+
+  // Bir blok hücresinin hangi yarısına tıklanırsa tıklansın, kaynağı her zaman
+  // bloğun başlangıç hücresine sabitler — böylece dragSource/tapSelected ve
+  // attemptPlacement tek bir tutarlı referansla çalışır.
+  const normalizeCellRef = (ref: CellRef): CellRef => {
+    const bounds = getBlockBounds(ref.classKey, ref.day, ref.si)
+    return bounds ? { ...ref, si: bounds[0] } : ref
+  }
+
+  // Sürüklenen/seçilen kaynak bir blok ise, bloğun HER İKİ hücresi de
+  // "kaynak" olarak vurgulanmalı (tek hücre değil).
+  const isSourceCell = (source: CellRef | null, cellRef: CellRef): boolean => {
+    if (!source) return false
+    if (sameCell(source, cellRef)) return true
+    if (source.classKey !== cellRef.classKey || source.day !== cellRef.day) return false
+    const bounds = getBlockBounds(source.classKey, source.day, source.si)
+    return !!bounds && (cellRef.si === bounds[0] || cellRef.si === bounds[1])
+  }
+
+  const isLockableCell = (classKey: ClassKey, day: Day, si: number): boolean => {
+    const cell = tables[classKey]?.[day]?.[si]
+    return !!cell?.subjectId
+  }
+
+  const isVacated = (vacated: CellRef[], classKey: ClassKey, day: Day, si: number) =>
+    vacated.some((v) => v.classKey === classKey && v.day === day && v.si === si)
+
+  const daySubjectCountLive = (classKey: ClassKey, day: Day, subjId: string, vacated: CellRef[]): number => {
+    const dayCells = tables[classKey]?.[day] ?? []
+    let n = 0
+    dayCells.forEach((c, i) => {
+      if (isVacated(vacated, classKey, day, i)) return
+      if (c?.subjectId === subjId) n++
+    })
+    return n
+  }
+
+  const checkSubjectPlacement = (
+    classKey: ClassKey, day: Day, si: number, subject: Subject, vacated: CellRef[]
+  ): string | null => {
+    const rule = subject.rule
+    const currentDayCount = daySubjectCountLive(classKey, day, subject.id, vacated)
+    const perDayMax = rule?.perDayMax ?? 0
+    const effectivePerDayMax = perDayMax > 0 ? perDayMax : 2
+    if (currentDayCount + 1 > effectivePerDayMax) return `${subject.name}: günlük üst sınır (${effectivePerDayMax}) aşılır`
+
+    const minDays = rule?.minDays ?? 0
+    if (minDays > 0) {
+      const daysWithSubject = new Set<Day>()
+      for (const d of DAYS) {
+        const dayCells = tables[classKey]?.[d] ?? []
+        dayCells.forEach((c, i) => {
+          if (isVacated(vacated, classKey, d, i)) return
+          if (c?.subjectId === subject.id) daysWithSubject.add(d)
+        })
+      }
+      const alreadyThisDay = daysWithSubject.has(day)
+      if (!alreadyThisDay && daysWithSubject.size < minDays - 1 && currentDayCount > 0) {
+        return `${subject.name}: en az ${minDays} güne yayılma kuralı bozulur`
+      }
+    }
+
+    const maxConsec = rule?.maxConsecutive ?? 0
+    if (maxConsec > 0) {
+      const dayCells = tables[classKey][day]
+      let backward = 0
+      for (let k = si - 1; k >= 0; k--) {
+        if (isVacated(vacated, classKey, day, k)) break
+        if (dayCells[k]?.subjectId !== subject.id) break
+        backward++
+      }
+      let forward = 0
+      for (let k = si + 1; k < slots.length; k++) {
+        if (isVacated(vacated, classKey, day, k)) break
+        if (dayCells[k]?.subjectId !== subject.id) break
+        forward++
+      }
+      if (backward + 1 + forward > maxConsec) return `${subject.name}: art arda en fazla ${maxConsec} saat olabilir`
+    }
+
+    // Ardışıklık: aynı günde aynı ders varsa yeni slot mevcut bloğa bitişik olmalı
+    {
+      const dayCells = tables[classKey][day]
+      const existingOnDay: number[] = []
+      dayCells.forEach((c, i) => {
+        if (isVacated(vacated, classKey, day, i)) return
+        if (c?.subjectId === subject.id) existingOnDay.push(i)
+      })
+      if (existingOnDay.length > 0) {
+        const combined = [...existingOnDay, si].sort((a, b) => a - b)
+        for (let i = 1; i < combined.length; i++) {
+          if (combined[i] !== combined[i - 1] + 1) return `${subject.name}: aynı gün içinde bitişik olmalı`
+        }
+      }
+    }
+
+    const slotLabel = `S${si + 1}`
+    if (rule?.avoidSlots?.includes(slotLabel)) return `${subject.name}: bu saat kaçınılacak saatler arasında`
+
+    return null
+  }
+
+  const checkTeacherPlacement = (
+    day: Day, si: number, teacher: Teacher, vacated: CellRef[]
+  ): string | null => {
+    const slotLabel = `S${si + 1}`
+    if (teacher.unavailable?.[day]?.includes(slotLabel)) return `${teacher.name} bu saatte müsait değil`
+    for (const c of classes) {
+      if (isVacated(vacated, c.key, day, si)) continue
+      if (tables[c.key]?.[day]?.[si]?.teacherId === teacher.id) {
+        return `${teacher.name} bu saatte ${c.key} sınıfında ders veriyor`
+      }
+    }
+    return null
+  }
+
+  // Bir ders taşınmaya başlandığında, o dersin gerçekten konabileceği tüm
+  // hücreleri (aynı sınıf içinde — bir ders başka sınıfa geçemez, çünkü her
+  // sınıfın kendi haftalık saat ihtiyacı var) attemptPlacement ile BİREBİR
+  // aynı kuralları kontrol ederek bulur. "Nereye koyabilirim" önizlemesi
+  // (yeşil vurgulama) bunu kullanır.
+  // Blok (2 saatlik) bir dersin taşınabileceği tüm gün+çift-slot başlangıçlarını
+  // bulur: ya tamamen boş bir çifte, ya da tam eşleşen başka bir bloğa (yer
+  // değiştirerek). Karışık durumlar (yarı boş/yarı tek ders vb.) desteklenmiyor —
+  // bunlar önce tek ders taşımalarıyla çözülmeli, bu yüzden hedef olarak sayılmaz.
+  const computeBlockValidTargets = (source: CellRef, bounds: [number, number]): Set<string> => {
+    const result = new Set<string>()
+    const [sA, sB] = bounds
+    if (isCellLocked(source.classKey, source.day, sA) || isCellLocked(source.classKey, source.day, sB)) return result
+    const sourceCell = tables[source.classKey]?.[source.day]?.[sA]
+    if (!sourceCell?.subjectId || !sourceCell.teacherId) return result
+    const sourceSubject = subjects.find((s) => s.id === sourceCell.subjectId)
+    const sourceTeacher = teachers.find((t) => t.id === sourceCell.teacherId)
+    if (!sourceSubject || !sourceTeacher) return result
+    const vacatedSource: CellRef[] = [
+      { classKey: source.classKey, day: source.day, si: sA },
+      { classKey: source.classKey, day: source.day, si: sB },
+    ]
+
+    for (const day of DAYS) {
+      for (let tA = 0; tA < slots.length - 1; tA++) {
+        const tB = tA + 1
+        if (day === source.day && tA <= sB && tB >= sA) continue // kaynakla çakışıyor
+        if (isCellLocked(source.classKey, day, tA) || isCellLocked(source.classKey, day, tB)) continue
+        const cellA = tables[source.classKey]?.[day]?.[tA]
+        const cellB = tables[source.classKey]?.[day]?.[tB]
+        const targetA: CellRef = { classKey: source.classKey, day, si: tA }
+        const targetB: CellRef = { classKey: source.classKey, day, si: tB }
+
+        if (!cellA?.subjectId && !cellB?.subjectId) {
+          const reason =
+            checkSubjectPlacement(source.classKey, day, tA, sourceSubject, vacatedSource) ??
+            checkSubjectPlacement(source.classKey, day, tB, sourceSubject, vacatedSource) ??
+            checkTeacherPlacement(day, tA, sourceTeacher, vacatedSource) ??
+            checkTeacherPlacement(day, tB, sourceTeacher, vacatedSource)
+          if (reason) continue
+        } else if (
+          cellA?.subjectId && cellA.teacherId && cellB?.subjectId &&
+          cellA.subjectId === cellB.subjectId && cellA.teacherId === cellB.teacherId
+        ) {
+          const targetSubject = subjects.find((s) => s.id === cellA.subjectId)
+          const targetTeacher = teachers.find((t) => t.id === cellA.teacherId)
+          if (!targetSubject || !targetTeacher) continue
+          const vacated: CellRef[] = [...vacatedSource, targetA, targetB]
+          const reasonA =
+            checkSubjectPlacement(source.classKey, day, tA, sourceSubject, vacated) ??
+            checkSubjectPlacement(source.classKey, day, tB, sourceSubject, vacated) ??
+            checkTeacherPlacement(day, tA, sourceTeacher, vacated) ??
+            checkTeacherPlacement(day, tB, sourceTeacher, vacated)
+          if (reasonA) continue
+          const reasonB =
+            checkSubjectPlacement(source.classKey, source.day, sA, targetSubject, vacated) ??
+            checkSubjectPlacement(source.classKey, source.day, sB, targetSubject, vacated) ??
+            checkTeacherPlacement(source.day, sA, targetTeacher, vacated) ??
+            checkTeacherPlacement(source.day, sB, targetTeacher, vacated)
+          if (reasonB) continue
+        } else {
+          continue // karışık doluluk — desteklenmiyor
+        }
+
+        result.add(cellKeyOf(targetA))
+        result.add(cellKeyOf(targetB))
+        blockTargetStarts.current.set(cellKeyOf(targetA), tA)
+        blockTargetStarts.current.set(cellKeyOf(targetB), tA)
+      }
+    }
+    return result
+  }
+
+  const computeValidTargets = (source: CellRef): Set<string> => {
+    blockTargetStarts.current = new Map()
+    const blockBounds = getBlockBounds(source.classKey, source.day, source.si)
+    if (blockBounds) return computeBlockValidTargets(source, blockBounds)
+
+    const result = new Set<string>()
+    if (isCellLocked(source.classKey, source.day, source.si)) return result
+    const sourceCell = tables[source.classKey]?.[source.day]?.[source.si]
+    if (!sourceCell?.subjectId || !sourceCell.teacherId) return result
+    const sourceSubject = subjects.find((s) => s.id === sourceCell.subjectId)
+    const sourceTeacher = teachers.find((t) => t.id === sourceCell.teacherId)
+    if (!sourceSubject || !sourceTeacher) return result
+
+    for (const day of DAYS) {
+      for (let si = 0; si < slots.length; si++) {
+        if (day === source.day && si === source.si) continue
+        if (isCellLocked(source.classKey, day, si)) continue
+        if (isBlockCell(source.classKey, day, si)) continue
+        const target: CellRef = { classKey: source.classKey, day, si }
+        const targetCell = tables[source.classKey]?.[day]?.[si]
+
+        if (!targetCell?.subjectId) {
+          const vacated: CellRef[] = [source]
+          const reason =
+            checkSubjectPlacement(source.classKey, day, si, sourceSubject, vacated) ??
+            checkTeacherPlacement(day, si, sourceTeacher, vacated)
+          if (!reason) result.add(cellKeyOf(target))
+        } else {
+          if (!targetCell.teacherId) continue
+          const targetSubject = subjects.find((s) => s.id === targetCell.subjectId)
+          const targetTeacher = teachers.find((t) => t.id === targetCell.teacherId)
+          if (!targetSubject || !targetTeacher) continue
+          const vacated: CellRef[] = [source, target]
+          const reasonA =
+            checkSubjectPlacement(source.classKey, day, si, sourceSubject, vacated) ??
+            checkTeacherPlacement(day, si, sourceTeacher, vacated)
+          if (reasonA) continue
+          const reasonB =
+            checkSubjectPlacement(source.classKey, source.day, source.si, targetSubject, vacated) ??
+            checkTeacherPlacement(source.day, source.si, targetTeacher, vacated)
+          if (reasonB) continue
+          result.add(cellKeyOf(target))
+        }
+      }
+    }
+    return result
+  }
+
+  const cloneTablesFor = (
+    prev: Record<ClassKey, Record<Day, Cell[]>>, classKey: ClassKey, days: Day[]
+  ) => {
+    const next = { ...prev, [classKey]: { ...prev[classKey] } }
+    for (const d of days) next[classKey][d] = [...prev[classKey][d]]
+    return next
+  }
+
+  const flashSuccess = (keys: string[]) => {
+    setFlashCells(new Set(keys))
+    window.setTimeout(() => setFlashCells(new Set()), 550)
+  }
+  const flashReject = (key: string) => {
+    setShakeCells((prev) => new Set(prev).add(key))
+    window.setTimeout(() => setShakeCells((prev) => {
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    }), 400)
+  }
+
+  const restoreSnapshot = (snapshot: { classKey: ClassKey; day: Day; si: number; cell: Cell }[]) => {
+    setTables((prev) => {
+      const byClass = new Map<ClassKey, Set<Day>>()
+      snapshot.forEach((s) => {
+        if (!byClass.has(s.classKey)) byClass.set(s.classKey, new Set())
+        byClass.get(s.classKey)!.add(s.day)
+      })
+      let next = prev
+      byClass.forEach((days, ck) => { next = cloneTablesFor(next, ck, Array.from(days)) })
+      snapshot.forEach((s) => { next[s.classKey][s.day][s.si] = s.cell })
+      return next
+    })
+  }
+
+  // Blok (2 saatlik) bir dersi taşır/yer değiştirir. computeBlockValidTargets
+  // ile aynı kuralları drop anında yeniden kontrol eder (savunma amaçlı —
+  // önizleme hesaplandıktan sonra tablo değişmiş olabilir).
+  const attemptBlockPlacement = (source: CellRef, target: CellRef) => {
+    const classKey = source.classKey
+    const bounds = getBlockBounds(classKey, source.day, source.si)
+    if (!bounds) return
+    const [sA, sB] = bounds
+    const targetKey = cellKeyOf(target)
+
+    if (classKey !== target.classKey) {
+      pushToast({ kind: 'error', text: 'Ders sadece kendi sınıfı içinde taşınabilir' })
+      flashReject(targetKey)
+      return
+    }
+    if (isCellLocked(classKey, source.day, sA) || isCellLocked(classKey, source.day, sB)) {
+      pushToast({ kind: 'error', text: 'Bu blok kilitli, taşınamaz' })
+      return
+    }
+
+    const tA = blockTargetStarts.current.get(targetKey)
+    if (tA === undefined) {
+      pushToast({ kind: 'error', text: 'Blok ders buraya taşınamaz' })
+      flashReject(targetKey)
+      return
+    }
+    const tB = tA + 1
+    if (source.day === target.day && tA === sA) return
+
+    if (isCellLocked(classKey, target.day, tA) || isCellLocked(classKey, target.day, tB)) {
+      pushToast({ kind: 'error', text: 'Hedef blok kilitli' })
+      flashReject(targetKey)
+      return
+    }
+
+    const sourceCell = tables[classKey][source.day][sA]
+    if (!sourceCell?.subjectId || !sourceCell.teacherId) return
+    const sourceSubject = subjects.find((s) => s.id === sourceCell.subjectId)
+    const sourceTeacher = teachers.find((t) => t.id === sourceCell.teacherId)
+    if (!sourceSubject || !sourceTeacher) return
+
+    const targetCellA = tables[classKey][target.day][tA]
+    const targetCellB = tables[classKey][target.day][tB]
+    const targetKeyA = cellKeyOf({ classKey, day: target.day, si: tA })
+    const targetKeyB = cellKeyOf({ classKey, day: target.day, si: tB })
+    const sourceKeyA = cellKeyOf({ classKey, day: source.day, si: sA })
+    const sourceKeyB = cellKeyOf({ classKey, day: source.day, si: sB })
+
+    if (!targetCellA?.subjectId && !targetCellB?.subjectId) {
+      const vacated: CellRef[] = [{ classKey, day: source.day, si: sA }, { classKey, day: source.day, si: sB }]
+      const reason =
+        checkSubjectPlacement(classKey, target.day, tA, sourceSubject, vacated) ??
+        checkSubjectPlacement(classKey, target.day, tB, sourceSubject, vacated) ??
+        checkTeacherPlacement(target.day, tA, sourceTeacher, vacated) ??
+        checkTeacherPlacement(target.day, tB, sourceTeacher, vacated)
+      if (reason) {
+        pushToast({ kind: 'error', text: reason })
+        flashReject(targetKey)
+        return
+      }
+
+      setTables((prev) => {
+        const next = cloneTablesFor(prev, classKey, Array.from(new Set([source.day, target.day])))
+        next[classKey][source.day][sA] = {}
+        next[classKey][source.day][sB] = {}
+        next[classKey][target.day][tA] = sourceCell
+        next[classKey][target.day][tB] = sourceCell
+        return next
+      })
+      const snapshot = [
+        { classKey, day: source.day, si: sA, cell: sourceCell },
+        { classKey, day: source.day, si: sB, cell: sourceCell },
+        { classKey, day: target.day, si: tA, cell: {} as Cell },
+        { classKey, day: target.day, si: tB, cell: {} as Cell },
+      ]
+      flashSuccess([targetKeyA, targetKeyB])
+      pushToast({
+        kind: 'success', text: 'Blok ders taşındı', durationMs: 6000,
+        action: { label: 'Geri Al', onClick: () => restoreSnapshot(snapshot) },
+      })
+    } else {
+      if (!targetCellA?.teacherId || targetCellA.subjectId !== targetCellB?.subjectId || targetCellA.teacherId !== targetCellB?.teacherId) {
+        pushToast({ kind: 'error', text: 'Hedef geçerli bir blok değil' })
+        flashReject(targetKey)
+        return
+      }
+      const targetSubject = subjects.find((s) => s.id === targetCellA.subjectId)
+      const targetTeacher = teachers.find((t) => t.id === targetCellA.teacherId)
+      if (!targetSubject || !targetTeacher) return
+
+      const vacated: CellRef[] = [
+        { classKey, day: source.day, si: sA }, { classKey, day: source.day, si: sB },
+        { classKey, day: target.day, si: tA }, { classKey, day: target.day, si: tB },
+      ]
+      const reasonA =
+        checkSubjectPlacement(classKey, target.day, tA, sourceSubject, vacated) ??
+        checkSubjectPlacement(classKey, target.day, tB, sourceSubject, vacated) ??
+        checkTeacherPlacement(target.day, tA, sourceTeacher, vacated) ??
+        checkTeacherPlacement(target.day, tB, sourceTeacher, vacated)
+      if (reasonA) {
+        pushToast({ kind: 'error', text: reasonA })
+        flashReject(targetKey)
+        return
+      }
+      const reasonB =
+        checkSubjectPlacement(classKey, source.day, sA, targetSubject, vacated) ??
+        checkSubjectPlacement(classKey, source.day, sB, targetSubject, vacated) ??
+        checkTeacherPlacement(source.day, sA, targetTeacher, vacated) ??
+        checkTeacherPlacement(source.day, sB, targetTeacher, vacated)
+      if (reasonB) {
+        pushToast({ kind: 'error', text: reasonB })
+        flashReject(targetKey)
+        return
+      }
+
+      setTables((prev) => {
+        const next = cloneTablesFor(prev, classKey, Array.from(new Set([source.day, target.day])))
+        next[classKey][source.day][sA] = targetCellA
+        next[classKey][source.day][sB] = targetCellB
+        next[classKey][target.day][tA] = sourceCell
+        next[classKey][target.day][tB] = sourceCell
+        return next
+      })
+      const snapshot = [
+        { classKey, day: source.day, si: sA, cell: sourceCell },
+        { classKey, day: source.day, si: sB, cell: sourceCell },
+        { classKey, day: target.day, si: tA, cell: targetCellA },
+        { classKey, day: target.day, si: tB, cell: targetCellB },
+      ]
+      flashSuccess([sourceKeyA, sourceKeyB, targetKeyA, targetKeyB])
+      pushToast({
+        kind: 'success', text: 'Bloklar yer değiştirdi', durationMs: 6000,
+        action: { label: 'Geri Al', onClick: () => restoreSnapshot(snapshot) },
+      })
+    }
+  }
+
+  const attemptPlacement = (source: CellRef, target: CellRef) => {
+    if (sameCell(source, target)) return
+    const targetKey = cellKeyOf(target)
+
+    if (getBlockBounds(source.classKey, source.day, source.si)) {
+      attemptBlockPlacement(source, target)
+      return
+    }
+
+    if (source.classKey !== target.classKey) {
+      pushToast({ kind: 'error', text: 'Ders sadece kendi sınıfı içinde taşınabilir' })
+      flashReject(targetKey)
+      return
+    }
+    if (isCellLocked(source.classKey, source.day, source.si)) {
+      pushToast({ kind: 'error', text: 'Bu ders kilitli, taşınamaz' })
+      return
+    }
+    if (isCellLocked(target.classKey, target.day, target.si)) {
+      pushToast({ kind: 'error', text: 'Hedef ders kilitli' })
+      flashReject(targetKey)
+      return
+    }
+    if (isBlockCell(target.classKey, target.day, target.si)) {
+      pushToast({ kind: 'error', text: 'Hedef, 2 saatlik bir bloğun parçası' })
+      flashReject(targetKey)
+      return
+    }
+
+    const sourceCell = tables[source.classKey][source.day][source.si]
+    if (!sourceCell?.subjectId || !sourceCell.teacherId) return
+    const targetCell = tables[target.classKey][target.day][target.si]
+
+    const sourceSubject = subjects.find((s) => s.id === sourceCell.subjectId)
+    const sourceTeacher = teachers.find((t) => t.id === sourceCell.teacherId)
+    if (!sourceSubject || !sourceTeacher) return
+
+    if (!targetCell?.subjectId) {
+      // Boş hücreye taşıma
+      const vacated: CellRef[] = [source]
+      const reason =
+        checkSubjectPlacement(target.classKey, target.day, target.si, sourceSubject, vacated) ??
+        checkTeacherPlacement(target.day, target.si, sourceTeacher, vacated)
+      if (reason) {
+        pushToast({ kind: 'error', text: reason })
+        flashReject(targetKey)
+        return
+      }
+
+      setTables((prev) => {
+        const next = cloneTablesFor(prev, source.classKey, Array.from(new Set([source.day, target.day])))
+        next[source.classKey][source.day][source.si] = {}
+        next[target.classKey][target.day][target.si] = sourceCell
+        return next
+      })
+      const snapshot = [
+        { ...source, cell: sourceCell },
+        { ...target, cell: {} as Cell },
+      ]
+      flashSuccess([targetKey])
+      pushToast({
+        kind: 'success', text: 'Ders taşındı', durationMs: 6000,
+        action: { label: 'Geri Al', onClick: () => restoreSnapshot(snapshot) },
+      })
+    } else {
+      // Dolu hücreyle yer değiştirme
+      if (!targetCell.teacherId) return
+      const targetSubject = subjects.find((s) => s.id === targetCell.subjectId)
+      const targetTeacher = teachers.find((t) => t.id === targetCell.teacherId)
+      if (!targetSubject || !targetTeacher) return
+
+      const vacated: CellRef[] = [source, target]
+      const reasonA =
+        checkSubjectPlacement(target.classKey, target.day, target.si, sourceSubject, vacated) ??
+        checkTeacherPlacement(target.day, target.si, sourceTeacher, vacated)
+      if (reasonA) {
+        pushToast({ kind: 'error', text: reasonA })
+        flashReject(targetKey)
+        return
+      }
+      const reasonB =
+        checkSubjectPlacement(source.classKey, source.day, source.si, targetSubject, vacated) ??
+        checkTeacherPlacement(source.day, source.si, targetTeacher, vacated)
+      if (reasonB) {
+        pushToast({ kind: 'error', text: reasonB })
+        flashReject(targetKey)
+        return
+      }
+
+      setTables((prev) => {
+        const next = cloneTablesFor(prev, source.classKey, Array.from(new Set([source.day, target.day])))
+        next[source.classKey][source.day][source.si] = targetCell
+        next[target.classKey][target.day][target.si] = sourceCell
+        return next
+      })
+      const snapshot = [
+        { ...source, cell: sourceCell },
+        { ...target, cell: targetCell },
+      ]
+      flashSuccess([cellKeyOf(source), targetKey])
+      pushToast({
+        kind: 'success', text: 'Dersler yer değiştirdi', durationMs: 6000,
+        action: { label: 'Geri Al', onClick: () => restoreSnapshot(snapshot) },
+      })
+    }
+  }
+
+  const onTapSlot = (cellRef: CellRef) => {
+    if (!tapSelected) {
+      if (!isDraggableCell(cellRef.classKey, cellRef.day, cellRef.si)) {
+        if (isCellLocked(cellRef.classKey, cellRef.day, cellRef.si)) {
+          pushToast({ kind: 'error', text: 'Bu ders kilitli' })
+        }
+        return
+      }
+      const normalized = normalizeCellRef(cellRef)
+      setTapSelected(normalized)
+      setValidTargets(computeValidTargets(normalized))
+      return
+    }
+    if (isSourceCell(tapSelected, cellRef)) {
+      setTapSelected(null)
+      setValidTargets(null)
+      return
+    }
+    attemptPlacement(tapSelected, cellRef)
+    setTapSelected(null)
+    setValidTargets(null)
+  }
+
   return (
     <>
+      <Toasts />
       <div className="topbar glass p-6" style={{ justifyContent: 'space-between', gap: 12 }}>
         <label className="field" style={{ margin: 0 }}>
           <span className="field-label">Sınıf Filtresi</span>
@@ -1883,6 +2729,17 @@ export default function DersProgramlari() {
           <button className="btn btn-outline" onClick={() => setShowSheet(true)} disabled={!Object.keys(tables ?? {}).length || isGenerating}>Çarşaf Görünüm</button>
           <button className="btn btn-outline" onClick={handlePrintHandbooks} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📄 Sınıf El PDF</button>
           <button className="btn btn-outline" onClick={handlePrintSheet} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📊 Sınıf Çarşaf PDF</button>
+          {lockedCells.length > 0 && (
+            <button
+              className="btn btn-outline btn-sm"
+              type="button"
+              onClick={clearAllCellLocks}
+              style={{ borderColor: 'rgba(245,158,11,0.5)', color: '#f59e0b' }}
+              title="Tüm hücre kilitlerini kaldır"
+            >
+              🔓 Kilitleri Kaldır ({lockedCells.length})
+            </button>
+          )}
           {!isGenerating && (
             <button className="btn btn-primary" onClick={generate}>
               Programları Oluştur
@@ -1890,6 +2747,22 @@ export default function DersProgramlari() {
           )}
         </div>
       </div>
+
+      {/* Hücre kilidi bilgi bandı */}
+      {lockedCells.length > 0 && (
+        <div style={{
+          margin: '12px 0',
+          padding: '10px 16px',
+          borderRadius: 10,
+          background: 'rgba(245,158,11,0.08)',
+          border: '1px solid rgba(245,158,11,0.3)',
+          display: 'flex', alignItems: 'center', gap: 10,
+          fontSize: 13, color: '#fbbf24',
+        }}>
+          <LockIcon locked />
+          {lockedCells.length} ders kilitli — program yeniden oluşturulduğunda bu hücreler korunur.
+        </div>
+      )}
 
       {/* Eksik atama uyarısı */}
       {assignmentStats.missing > 0 && !isGenerating && (
@@ -2117,17 +2990,75 @@ export default function DersProgramlari() {
                               const cell = tables[c.key]?.[d]?.[si]
                               const subj = subjects.find(s => s.id === cell?.subjectId)
                               const teacher = teachers.find(t => t.id === cell?.teacherId)
+                              const cellRef: CellRef = { classKey: c.key, day: d, si }
+                              const key = cellKeyOf(cellRef)
+                              const locked = isCellLocked(c.key, d, si)
+                              const draggableCell = isDraggableCell(c.key, d, si)
+                              const lockable = isLockableCell(c.key, d, si)
+                              const blockBounds = getBlockBounds(c.key, d, si)
+                              const isDragSource = isSourceCell(dragSource, cellRef)
+                              const isValidTarget = !isDragSource && !!validTargets && validTargets.has(key)
+                              const isDragOverThis = !!dragSource && !!dragOverTarget && sameCell(dragOverTarget, cellRef)
+                              const dragOverValid = isDragOverThis && isValidTarget
+                              const pillClasses = [
+                                'slot-pill',
+                                cell?.subjectId ? '' : 'empty',
+                                draggableCell ? 'draggable' : '',
+                                locked ? 'locked' : '',
+                                placementBlockerCells.has(key) ? 'hint-blocker' : '',
+                                isDragSource ? 'dragging' : '',
+                                !isDragOverThis && isValidTarget ? 'valid-move-target' : '',
+                                isDragOverThis ? (dragOverValid ? 'drop-target-valid' : 'drop-target-invalid') : '',
+                                flashCells.has(key) ? 'drop-success' : '',
+                                shakeCells.has(key) ? 'drop-reject' : '',
+                              ].filter(Boolean).join(' ')
                               return (
-                                <td key={c.key + d + si} className="slot">
-                                  {cell?.subjectId ? (
-                                    <div className="slot-pill" title={`${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}`}>
-                                      <span className="dot" style={{ background: subj?.color ?? '#93c5fd' }} />
-                                      <span className="s-name">{getSubjectAbbreviation(subj?.name || '', subj?.abbreviation)}</span>
-                                      <span className="s-teacher">{teacher ? getTeacherAbbreviation(teacher.name) : '—'}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="muted">—</span>
-                                  )}
+                                <td key={key} className="slot">
+                                  <div
+                                    className={pillClasses}
+                                    draggable={draggableCell}
+                                    title={cell?.subjectId ? `${subj?.name} — ${teacher ? teacher.name : 'Atanmadı'}${blockBounds ? ' (2 saatlik blok)' : ''}` : undefined}
+                                    onDragStart={(e) => {
+                                      if (!draggableCell) { e.preventDefault(); return }
+                                      e.dataTransfer.effectAllowed = 'move'
+                                      const normalized = normalizeCellRef(cellRef)
+                                      setDragSource(normalized)
+                                      setValidTargets(computeValidTargets(normalized))
+                                    }}
+                                    onDragEnd={() => { setDragSource(null); setDragOverTarget(null); setValidTargets(null) }}
+                                    onDragOver={(e) => {
+                                      if (!dragSource || dragSource.classKey !== c.key) return
+                                      e.preventDefault()
+                                      setDragOverTarget(cellRef)
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault()
+                                      if (dragSource) attemptPlacement(dragSource, cellRef)
+                                      setDragSource(null)
+                                      setDragOverTarget(null)
+                                      setValidTargets(null)
+                                    }}
+                                  >
+                                    {cell?.subjectId ? (
+                                      <>
+                                        <span className="dot" style={{ background: subj?.color ?? '#93c5fd' }} />
+                                        <span className="s-name">{getSubjectAbbreviation(subj?.name || '', subj?.abbreviation)}</span>
+                                        <span className="s-teacher">{teacher ? getTeacherAbbreviation(teacher.name) : '—'}</span>
+                                        {lockable && (
+                                          <button
+                                            type="button"
+                                            className="cell-lock-btn"
+                                            aria-label={locked ? 'Kilidi aç' : 'Hücreyi kilitle'}
+                                            onClick={(e) => { e.stopPropagation(); toggleCellLock(c.key, d, si) }}
+                                          >
+                                            <LockIcon locked={locked} />
+                                          </button>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="muted">—</span>
+                                    )}
+                                  </div>
                                 </td>
                               )
                             })}
@@ -2136,7 +3067,7 @@ export default function DersProgramlari() {
                       </tbody>
                     </table>
 
-                    {/* Mobile-friendly accordion per day */}
+                    {/* Mobile-friendly accordion per day — dokunarak seç, sonra hedefe dokun */}
                     <div className="tt-accordion">
                       {DAYS.map((d) => (
                         <details key={d} className="tt-acc-day">
@@ -2146,14 +3077,47 @@ export default function DersProgramlari() {
                               const cell = tables[c.key]?.[d]?.[si]
                               const subj = subjects.find(s => s.id === cell?.subjectId)
                               const teacher = teachers.find(t => t.id === cell?.teacherId)
+                              const cellRef: CellRef = { classKey: c.key, day: d, si }
+                              const key = cellKeyOf(cellRef)
+                              const locked = isCellLocked(c.key, d, si)
+                              const lockable = isLockableCell(c.key, d, si)
+                              const selected = isSourceCell(tapSelected, cellRef)
+                              const isValidTarget = !selected && !!tapSelected && !!validTargets && validTargets.has(key)
+                              const slotClasses = [
+                                'acc-slot',
+                                isBlockCell(c.key, d, si) ? 'acc-block' : '',
+                                placementBlockerCells.has(key) ? 'hint-blocker' : '',
+                                selected ? 'tap-selected' : '',
+                                isValidTarget ? 'valid-move-target' : '',
+                                locked ? 'locked' : '',
+                                flashCells.has(key) ? 'drop-success' : '',
+                                shakeCells.has(key) ? 'drop-reject' : '',
+                              ].filter(Boolean).join(' ')
                               return (
-                                <div key={c.key + d + 'a' + si} className="acc-slot">
+                                <div
+                                  key={c.key + d + 'a' + si}
+                                  className={slotClasses}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => onTapSlot(cellRef)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTapSlot(cellRef) } }}
+                                >
                                   <div className="acc-slot-left">S{si + 1}</div>
                                   {cell?.subjectId ? (
                                     <div className="acc-slot-main">
                                       <span className="dot" style={{ background: subj?.color ?? '#93c5fd' }} />
                                       <span className="s-name">{subj?.name}</span>
                                       <span className="s-teacher">{teacher ? teacher.name : '—'}</span>
+                                      {lockable && (
+                                        <button
+                                          type="button"
+                                          className="cell-lock-btn"
+                                          aria-label={locked ? 'Kilidi aç' : 'Hücreyi kilitle'}
+                                          onClick={(e) => { e.stopPropagation(); toggleCellLock(c.key, d, si) }}
+                                        >
+                                          <LockIcon locked={locked} />
+                                        </button>
+                                      )}
                                     </div>
                                   ) : (
                                     <div className="acc-slot-empty muted">—</div>
@@ -2184,12 +3148,19 @@ export default function DersProgramlari() {
               {item.deficits.map(d => `${d.name} (${d.missing})`).join(', ')}
             </div>
           ))}
-          {placementSuggestions.length > 0 && (
+          {placementHints.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Yerleşim Önerileri</div>
-              {placementSuggestions.map((s, idx) => (
-                <div key={idx} style={{ marginBottom: 2 }}>• {s}</div>
+              {placementHints.map((h, idx) => (
+                <div key={idx} style={{ marginBottom: 2 }}>
+                  <span style={{ color: h.blockerKey ? '#f59e0b' : undefined }}>•</span> {h.text}
+                </div>
               ))}
+              {placementBlockerCells.size > 0 && (
+                <div style={{ marginTop: 6, fontStyle: 'italic' }}>
+                  Programdaki amber renkte yanıp sönen dersler, taşınırsa yer açacak derslerdir — sürükleyip yeşil gösterilen yere bırakabilirsiniz.
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import Portal from '../shared/Portal'
 
-type Toast = { id: string; text: string; kind: 'success' | 'error' }
+type ToastAction = { label: string; onClick: () => void }
+type Toast = { id: string; text: string; kind: 'success' | 'error'; action?: ToastAction; durationMs?: number }
 
 let pushFn: ((t: Omit<Toast, 'id'>) => void) | null = null
 
@@ -19,7 +20,7 @@ export default function Toasts() {
       setItems((prev) => [...prev, item])
       setTimeout(() => {
         setItems((prev) => prev.filter((x) => x.id !== id))
-      }, 2000)
+      }, t.durationMs ?? 2000)
     }
     return () => {
       pushFn = null
@@ -32,10 +33,23 @@ export default function Toasts() {
     <Portal>
       <div className="toasts">
         {items.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>
+          <div key={t.id} className={`toast ${t.kind}`}>
+            <span className="toast-text">{t.text}</span>
+            {t.action && (
+              <button
+                type="button"
+                className="toast-action"
+                onClick={() => {
+                  t.action!.onClick()
+                  setItems((prev) => prev.filter((x) => x.id !== t.id))
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
+          </div>
         ))}
       </div>
     </Portal>
   )
 }
-
