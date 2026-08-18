@@ -33,6 +33,7 @@ function isTeacherAllowedForGrade(t: Teacher, subjId: string, gradeId: string): 
 
 function computeUtilization(
   t: Teacher,
+  teachers: Teacher[],
   subjects: Subject[],
   classKeys: { key: string; grade: string }[],
   dailyLessons: number,
@@ -42,25 +43,31 @@ function computeUtilization(
   const unavailCount = DAYS.reduce((sum, d) => sum + (t.unavailable?.[d]?.length ?? 0), 0)
   const available = Math.max(0, totalSlots - unavailCount)
 
-  // Her sınıf-şube × ders için: dersin saati var mı, öğretmen buna uygun mu,
-  // ve bu ders başka bir öğretmene kilitlenmiş mi kontrol et. Kilitli değilse
-  // (henüz Atamalar sayfasında seçim yapılmamışsa) uygun öğretmenin olası
-  // yükü olarak say — böylece Atamalar sayfası hiç ziyaret edilmemiş olsa
-  // bile yoğunluk göstergesi gerçekçi kalır.
+  // Her sınıf-şube × ders için:
+  // - Atamalar sayfasında zaten belirli bir öğretmene kilitlenmişse, saatler
+  //   SADECE o öğretmene tam olarak yazılır (diğerlerine hiç yazılmaz).
+  // - Henüz kilitlenmemişse, saatler o dersi verebilecek TÜM uygun öğretmenler
+  //   arasında eşit paylaştırılır (olası yük tahmini). Böylece Atamalar
+  //   sayfasında bir şube tek tek atandıkça, atanan öğretmenin payı tam
+  //   saate çıkar ve diğer adayların payı gerçek zamanlı olarak düşer.
   let required = 0
   for (const c of classKeys) {
     for (const s of subjects) {
       const hours = s.weeklyHoursByGrade?.[c.grade] ?? 0
       if (hours <= 0) continue
-      if (!isTeacherAllowedForGrade(t, s.id, c.grade)) continue
       const assignedTeacherId = assignments[`${c.key}|${s.id}`]
-      if (assignedTeacherId && assignedTeacherId !== t.id) continue
-      required += hours
+      if (assignedTeacherId) {
+        if (assignedTeacherId === t.id) required += hours
+        continue
+      }
+      if (!isTeacherAllowedForGrade(t, s.id, c.grade)) continue
+      const eligibleCount = teachers.filter(other => isTeacherAllowedForGrade(other, s.id, c.grade)).length
+      if (eligibleCount > 0) required += hours / eligibleCount
     }
   }
 
   const pct = available > 0 ? Math.min(999, Math.round((required / available) * 100)) : 0
-  return { required, available, pct }
+  return { required: Math.round(required * 10) / 10, available, pct }
 }
 
 function utilColor(pct: number): { bar: string; text: string; bg: string; label: string } {
@@ -165,7 +172,7 @@ export default function Ogretmenler() {
         const matchBranch = branchFilter === 'all' ? true : ids.includes(branchFilter)
         return matchName && matchBranch
       })
-      .map(t => ({ t, util: computeUtilization(t, subjects, classKeys, dailyLessons, assignments) }))
+      .map(t => ({ t, util: computeUtilization(t, teachers, subjects, classKeys, dailyLessons, assignments) }))
       .sort((a, b) => b.util.pct - a.util.pct)
   }, [teachers, query, branchFilter, subjects, classKeys, dailyLessons, assignments])
 
