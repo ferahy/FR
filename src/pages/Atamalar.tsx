@@ -67,15 +67,20 @@ export default function Atamalar() {
     })
   }
 
-  // Tek seçenekli dersleri otomatik ata
+  // Tek seçenekli dersleri otomatik ata; öğretmen tercihleri sonradan değişip
+  // mevcut bir atama artık geçersiz kaldıysa (örn. öğretmen o sınıf seviyesini
+  // vermiyor hale geldiyse) kaydı güncelle/temizle — aksi halde bayat bir atama
+  // ders programı oluşturucuda sessizce kullanılmaya devam eder.
   useEffect(() => {
     for (const c of classes) {
       const gradeSubjects = getSubjectsForGrade(c.grade)
       for (const s of gradeSubjects) {
-        if (getAssignment(c.key, s.id)) continue
         const eligible = getEligibleTeachers(s.id, c.grade)
+        const current = getAssignment(c.key, s.id)
         if (eligible.length === 1) {
-          assign(c.key, s.id, eligible[0].id)
+          if (eligible[0].id !== current) assign(c.key, s.id, eligible[0].id)
+        } else if (current && !eligible.some(t => t.id === current)) {
+          assign(c.key, s.id, null)
         }
       }
     }

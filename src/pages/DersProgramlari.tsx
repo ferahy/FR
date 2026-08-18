@@ -233,39 +233,25 @@ export default function DersProgramlari() {
       placedDays[c.key] = {}
     }
 
-    // Branş başına “explicit tercih listesi var mı?” haritası
-    const subjectHasExplicitPrefs = new Map<string, boolean>()
-    teachers.forEach(t => {
-      if (t.preferredGradesBySubject) {
-        Object.entries(t.preferredGradesBySubject).forEach(([subjId, arr]) => {
-          // Bu branş için explicit tercih tanımlanmışsa (boş bile olsa) işaretle
-          if (Array.isArray(arr)) subjectHasExplicitPrefs.set(subjId, true)
-        })
+    // Bir öğretmenin belirli bir sınıf seviyesinde belirli bir dersi verip veremeyeceği
+    // SADECE o öğretmenin kendi branş/tercih ayarlarına bakılarak belirlenir — başka bir
+    // öğretmenin aynı branş için özel tercih girmiş olması bu sonucu etkilemez.
+    const isTeacherAllowedForGrade = (t: Teacher, subjId: string, gradeId: string): boolean => {
+      const subs = getTeacherSubjectIds(t)
+      if (!subs.includes(subjId)) return false
+      const hasSubjectPref = t.preferredGradesBySubject && Object.prototype.hasOwnProperty.call(t.preferredGradesBySubject, subjId)
+      const subjPref = hasSubjectPref ? t.preferredGradesBySubject?.[subjId] ?? [] : undefined
+      if (subjPref && subjPref.length > 0) {
+        if (!subjPref.includes(gradeId)) return false
+      } else {
+        const prefGrades = t.preferredGrades ?? []
+        if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
       }
-    })
-
-    const filterAllowedTeachers = (list: typeof teachers, subjId: string, gradeId: string) => {
-      const hasExplicit = subjectHasExplicitPrefs.get(subjId) ?? false
-      return list.filter(t => {
-        const subs = getTeacherSubjectIds(t)
-        if (!subs.includes(subjId)) return false
-        const hasSubjectPref = t.preferredGradesBySubject && Object.prototype.hasOwnProperty.call(t.preferredGradesBySubject, subjId)
-        if (hasExplicit) {
-          if (!hasSubjectPref) return false
-          const subjPref = t.preferredGradesBySubject?.[subjId] ?? []
-          if (!subjPref.includes(gradeId)) return false
-        } else {
-          const subjPref = hasSubjectPref ? t.preferredGradesBySubject?.[subjId] ?? [] : undefined
-          if (subjPref && subjPref.length > 0) {
-            if (!subjPref.includes(gradeId)) return false
-          } else {
-            const prefGrades = t.preferredGrades ?? []
-            if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
-          }
-        }
-        return true
-      })
+      return true
     }
+
+    const filterAllowedTeachers = (list: typeof teachers, subjId: string, gradeId: string) =>
+      list.filter(t => isTeacherAllowedForGrade(t, subjId, gradeId))
 
     // Helper fonksiyonlar
     const isFree = (classKey: ClassKey, day: Day, si: number) =>
@@ -316,9 +302,12 @@ export default function DersProgramlari() {
       // ÖNCELİK 1: Atama tablosundan öğretmen kontrolü
       const assignedTeacherId = getAssignedTeacher(classKey, subjId)
       if (assignedTeacherId) {
-        // Atanmış öğretmen var, sadece onu kullan
+        // Atanmış öğretmen var, sadece onu kullan — ama Öğretmenler sayfasındaki
+        // branş/sınıf tercihi sonradan değişmiş olabilir (örn. artık bu sınıf seviyesini
+        // vermiyor). Atamalar sayfasında bu bayat kayıt hâlâ duruyor olabileceğinden,
+        // burada güncel tercihe uygunluğu tekrar doğrula; uymuyorsa bu kilidi yok say.
         const assignedTeacher = teachers.find(t => t.id === assignedTeacherId)
-        if (assignedTeacher) {
+        if (assignedTeacher && isTeacherAllowedForGrade(assignedTeacher, subjId, gradeId)) {
           // Müsaitlik kontrolü
           const slotLabel = `S${si + 1}`
           const isUnavailable = assignedTeacher.unavailable?.[day]?.includes(slotLabel)
