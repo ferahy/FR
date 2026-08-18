@@ -75,7 +75,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
 
   const submit = (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    if (name.trim() === 'ferah' && password === '1907') {
+    if (name.trim() === 'rft' && password === 'rft') {
       setError(null)
       onSuccess()
       return
@@ -209,7 +209,7 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
     <>
       <div className="glass p-4" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <div className="pill">ferah olarak giriş yapıldı</div>
+          <div className="pill">rft olarak giriş yapıldı</div>
           {message && <span className="muted">{message}</span>}
         </div>
         <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
