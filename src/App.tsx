@@ -179,6 +179,8 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
   }
 
   const doLoad = async () => {
+    const ok = window.confirm('Buluttaki veri, bu cihazdaki henüz buluta kaydedilmemiş değişikliklerin üzerine yazacak. Devam edilsin mi?')
+    if (!ok) return
     setMessage(null)
     setSyncing('down')
     const res = await loadFromCloud()

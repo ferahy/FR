@@ -6,6 +6,8 @@ const TEACHER_KEY = 'ferah_teachers_v2'
 const SCHOOL_KEY = 'schoolConfig'
 const TIMETABLE_KEY = 'timetables'
 const ASSIGNMENTS_KEY = 'ferah_assignments_v1'
+const LOCKED_CELLS_KEY = 'lockedCells'
+const LOCKED_TEACHERS_KEY = 'lockedTeachers'
 
 type CloudState = {
   subjects?: Subject[]
@@ -13,18 +15,33 @@ type CloudState = {
   school?: any
   timetables?: any
   assignments?: Assignments
+  lockedCells?: string[]
+  lockedTeachers?: string[]
 }
 
 // Supabase tablosunda "assignments" kolonu henüz yoksa hata veriyor. Bu helper
 // ile önce normal upsert dener, kolon hatasında ise assignments'ı timetables
 // içine gömerek geriye dönük uyumlu şekilde kaydeder.
+//
+// lockedCells/lockedTeachers için ayrı bir DB kolonu hiç yok (ve şema
+// değişikliği gerektirmesin diye eklenmeyecek) — bu yüzden her zaman
+// timetables JSON'ı içine __lockedCells/__lockedTeachers olarak gömülüyor.
+// Aksi halde bu kilitler buluta hiç gitmez; başka bir cihazdan "Buluttan
+// Çek" yapıldığında o cihazın kendi eski/alakasız kilit listesi yeni gelen
+// programla karışıp konum bazlı (classKey|day|slot) tesadüfi eşleşmelerle
+// yanlış hücreleri/öğretmenleri "kilitli" gösterebilir.
 async function resilientUpsert(client: SupabaseClient, userId: string, payload: CloudState) {
+  const timetablesWithLocks = {
+    ...(payload.timetables ?? {}),
+    __lockedCells: payload.lockedCells ?? [],
+    __lockedTeachers: payload.lockedTeachers ?? [],
+  }
   const base = {
     id: userId,
     subjects: payload.subjects ?? [],
     teachers: payload.teachers ?? [],
     school: payload.school ?? {},
-    timetables: payload.timetables ?? {},
+    timetables: timetablesWithLocks,
     assignments: payload.assignments ?? {},
     updated_at: new Date().toISOString(),
   }
@@ -78,6 +95,8 @@ function getLocalState(): CloudState {
     school: read(SCHOOL_KEY),
     timetables: read(TIMETABLE_KEY),
     assignments: read(ASSIGNMENTS_KEY),
+    lockedCells: read(LOCKED_CELLS_KEY),
+    lockedTeachers: read(LOCKED_TEACHERS_KEY),
   }
 }
 
@@ -95,6 +114,8 @@ function setLocalState(data: CloudState) {
   write(SCHOOL_KEY, data.school)
   write(TIMETABLE_KEY, data.timetables)
   write(ASSIGNMENTS_KEY, data.assignments)
+  write(LOCKED_CELLS_KEY, data.lockedCells ?? [])
+  write(LOCKED_TEACHERS_KEY, data.lockedTeachers ?? [])
 }
 
 export async function saveToCloud(userId = 'ferah'): Promise<{ ok: boolean; error?: string; warning?: string | null }> {
@@ -112,14 +133,24 @@ export async function loadFromCloud(userId = 'ferah'): Promise<{ ok: boolean; er
   const { data, error } = await client.from('app_state').select('*').eq('id', userId).single()
   if (error) return { ok: false, error: error.message }
   // assignments kolonunun eski sürümlerde olmaması durumunda timetables içindeki
-  // __assignments yedeğini kullan
-  const assignments = data?.assignments ?? data?.timetables?.__assignments ?? {}
+  // __assignments yedeğini kullan; lockedCells/lockedTeachers için de aynı
+  // gömme yöntemi kullanılıyor (bkz. resilientUpsert). Bu __-önekli alanları
+  // gerçek timetables verisinden ayıklayıp temizliyoruz — yoksa kalıcı olarak
+  // "hayalet" bir sınıf gibi timetables içinde birikip her sonraki kaydetmede
+  // tekrar buluta yüklenirler.
+  const rawTimetables = data?.timetables ?? {}
+  const { __assignments, __lockedCells, __lockedTeachers, ...cleanTimetables } = rawTimetables
+  const assignments = data?.assignments ?? __assignments ?? {}
+  const lockedCells = __lockedCells ?? []
+  const lockedTeachers = __lockedTeachers ?? []
   setLocalState({
     subjects: data?.subjects ?? [],
     teachers: data?.teachers ?? [],
     school: data?.school ?? {},
-    timetables: data?.timetables ?? {},
+    timetables: cleanTimetables,
     assignments,
+    lockedCells,
+    lockedTeachers,
   })
   return { ok: true }
 }
