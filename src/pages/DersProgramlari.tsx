@@ -1798,35 +1798,40 @@ export default function DersProgramlari() {
             const curriculumOk =
               (subjForA?.weeklyHoursByGrade?.[gradeA] ?? 0) > 0 &&
               (subjForB?.weeklyHoursByGrade?.[gradeB] ?? 0) > 0
-            if (!curriculumOk) return
-            // Bu sınıflarda ilgili ders zaten başka bir öğretmene kilitliyse
-            // (aynı sınıf-ders her zaman aynı öğretmeni kullanmalı), o öğretmeni zorunlu kıl.
-            // Önce Atamalar sayfasındaki kalıcı kilide bak (o her zaman geçerlidir),
-            // yoksa bu oturuma özgü geçici kilide düş.
-            const requiredAtA = getAssignedTeacher(a.classKey, b.subjId) ?? classSubjectTeacher[a.classKey]?.[b.subjId]
-            const requiredAtB = getAssignedTeacher(b.classKey, a.subjId) ?? classSubjectTeacher[b.classKey]?.[a.subjId]
+            // Müfredat uygun değilse bu hamleyi atla (bu SA yinelemesi hiçbir şey
+            // yapmaz, döngü bir sonraki iterasyona geçer) — runOnce'un tamamından
+            // çıkmamak için erken "return" DEĞİL, kalan mantığı sarmalayan bir
+            // "if" kullanılıyor.
+            if (curriculumOk) {
+              // Bu sınıflarda ilgili ders zaten başka bir öğretmene kilitliyse
+              // (aynı sınıf-ders her zaman aynı öğretmeni kullanmalı), o öğretmeni zorunlu kıl.
+              // Önce Atamalar sayfasındaki kalıcı kilide bak (o her zaman geçerlidir),
+              // yoksa bu oturuma özgü geçici kilide düş.
+              const requiredAtA = getAssignedTeacher(a.classKey, b.subjId) ?? classSubjectTeacher[a.classKey]?.[b.subjId]
+              const requiredAtB = getAssignedTeacher(b.classKey, a.subjId) ?? classSubjectTeacher[b.classKey]?.[a.subjId]
 
-            unplaceCell(a.classKey, a.day, a.si)
-            unplaceCell(b.classKey, b.day, b.si)
+              unplaceCell(a.classKey, a.day, a.si)
+              unplaceCell(b.classKey, b.day, b.si)
 
-            const teacherAtA = pickTeacher(
-              filterAllowedTeachers(teachers, b.subjId, gradeA), teacherLoad, b.subjId, gradeA, a.day, a.si,
-              { commit: false, requiredTeacherId: requiredAtA, occupied: teacherOccupied, randomByTeacher: teacherRandom, classKey: a.classKey, teacherClassDayCount }
-            )
-            const teacherAtB = pickTeacher(
-              filterAllowedTeachers(teachers, a.subjId, gradeB), teacherLoad, a.subjId, gradeB, b.day, b.si,
-              { commit: false, requiredTeacherId: requiredAtB, occupied: teacherOccupied, randomByTeacher: teacherRandom, classKey: b.classKey, teacherClassDayCount }
-            )
-            const validA = !!teacherAtA && canPlaceWithRules(a.classKey, a.day, a.si, b.subjId, false)
-            const validB = !!teacherAtB && canPlaceWithRules(b.classKey, b.day, b.si, a.subjId, false)
+              const teacherAtA = pickTeacher(
+                filterAllowedTeachers(teachers, b.subjId, gradeA), teacherLoad, b.subjId, gradeA, a.day, a.si,
+                { commit: false, requiredTeacherId: requiredAtA, occupied: teacherOccupied, randomByTeacher: teacherRandom, classKey: a.classKey, teacherClassDayCount }
+              )
+              const teacherAtB = pickTeacher(
+                filterAllowedTeachers(teachers, a.subjId, gradeB), teacherLoad, a.subjId, gradeB, b.day, b.si,
+                { commit: false, requiredTeacherId: requiredAtB, occupied: teacherOccupied, randomByTeacher: teacherRandom, classKey: b.classKey, teacherClassDayCount }
+              )
+              const validA = !!teacherAtA && canPlaceWithRules(a.classKey, a.day, a.si, b.subjId, false)
+              const validB = !!teacherAtB && canPlaceWithRules(b.classKey, b.day, b.si, a.subjId, false)
 
-            if (validA && validB && teacherAtA && teacherAtB) {
-              placeCell(a.classKey, a.day, a.si, b.subjId, teacherAtA)
-              placeCell(b.classKey, b.day, b.si, a.subjId, teacherAtB)
-            } else {
-              // geri al
-              placeCell(a.classKey, a.day, a.si, a.subjId, a.teacherId)
-              placeCell(b.classKey, b.day, b.si, b.subjId, b.teacherId)
+              if (validA && validB && teacherAtA && teacherAtB) {
+                placeCell(a.classKey, a.day, a.si, b.subjId, teacherAtA)
+                placeCell(b.classKey, b.day, b.si, a.subjId, teacherAtB)
+              } else {
+                // geri al
+                placeCell(a.classKey, a.day, a.si, a.subjId, a.teacherId)
+                placeCell(b.classKey, b.day, b.si, b.subjId, b.teacherId)
+              }
             }
           }
         } else {
