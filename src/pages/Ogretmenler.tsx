@@ -44,19 +44,27 @@ function computeUtilization(
   const available = Math.max(0, totalSlots - unavailCount)
 
   // Her sınıf-şube × ders için:
-  // - Atamalar sayfasında zaten belirli bir öğretmene kilitlenmişse, saatler
-  //   SADECE o öğretmene tam olarak yazılır (diğerlerine hiç yazılmaz).
-  // - Henüz kilitlenmemişse, saatler o dersi verebilecek TÜM uygun öğretmenler
-  //   arasında eşit paylaştırılır (olası yük tahmini). Böylece Atamalar
-  //   sayfasında bir şube tek tek atandıkça, atanan öğretmenin payı tam
-  //   saate çıkar ve diğer adayların payı gerçek zamanlı olarak düşer.
+  // - Atamalar sayfasında zaten belirli bir öğretmene kilitlenmişse VE o
+  //   öğretmen hâlâ (güncel tercihlerine göre) bu sınıf seviyesini
+  //   verebiliyorsa, saatler SADECE o öğretmene tam olarak yazılır.
+  //   (Kilitli öğretmen artık uygun değilse — örn. bulut verisinden gelen
+  //   eski bir kayıt kalmışsa — bu kilit bayat sayılır ve yok sayılır;
+  //   aksi halde başka bir öğretmenin tercihini genişletmesi hiçbir zaman
+  //   kendi yüzdesine yansımaz.)
+  // - Kilitlenmemişse (ya da kilit bayatsa), saatler o dersi verebilecek
+  //   TÜM uygun öğretmenler arasında eşit paylaştırılır (olası yük tahmini).
+  //   Böylece Atamalar sayfasında bir şube tek tek atandıkça, atanan
+  //   öğretmenin payı tam saate çıkar ve diğer adayların payı gerçek
+  //   zamanlı olarak düşer.
   let required = 0
   for (const c of classKeys) {
     for (const s of subjects) {
       const hours = s.weeklyHoursByGrade?.[c.grade] ?? 0
       if (hours <= 0) continue
       const assignedTeacherId = assignments[`${c.key}|${s.id}`]
-      if (assignedTeacherId) {
+      const assignedTeacher = assignedTeacherId ? teachers.find(other => other.id === assignedTeacherId) : undefined
+      const lockValid = !!assignedTeacher && isTeacherAllowedForGrade(assignedTeacher, s.id, c.grade)
+      if (lockValid) {
         if (assignedTeacherId === t.id) required += hours
         continue
       }
