@@ -15,50 +15,47 @@ const DAYS: Day[] = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma']
 
 type UtilData = { required: number; available: number; pct: number }
 
+// Bir öğretmenin belirli bir sınıf seviyesinde belirli bir dersi verip veremeyeceği
+// (Atamalar ve Ders Programları sayfalarındaki eşdeğer mantıkla birebir aynı olmalı).
+function isTeacherAllowedForGrade(t: Teacher, subjId: string, gradeId: string): boolean {
+  const subs = getSubjectIds(t)
+  if (!subs.includes(subjId)) return false
+  const hasSubjectPref = t.preferredGradesBySubject && Object.prototype.hasOwnProperty.call(t.preferredGradesBySubject, subjId)
+  const subjPref = hasSubjectPref ? t.preferredGradesBySubject?.[subjId] ?? [] : undefined
+  if (subjPref && subjPref.length > 0) {
+    if (!subjPref.includes(gradeId)) return false
+  } else {
+    const prefGrades = t.preferredGrades ?? []
+    if (prefGrades.length > 0 && !prefGrades.includes(gradeId)) return false
+  }
+  return true
+}
+
 function computeUtilization(
   t: Teacher,
   subjects: Subject[],
-  gradesList: { id: string; label: string }[],
+  classKeys: { key: string; grade: string }[],
   dailyLessons: number,
-  sectionCount: Record<string, number>,
   assignments: Assignments
 ): UtilData {
   const totalSlots = DAYS.length * Math.max(1, dailyLessons)
   const unavailCount = DAYS.reduce((sum, d) => sum + (t.unavailable?.[d]?.length ?? 0), 0)
   const available = Math.max(0, totalSlots - unavailCount)
 
-  // Assignment-based: classKey|subjectId entries where value === teacher id
-  const myAssignments = Object.entries(assignments).filter(([, tid]) => tid === t.id)
-
+  // Her sınıf-şube × ders için: dersin saati var mı, öğretmen buna uygun mu,
+  // ve bu ders başka bir öğretmene kilitlenmiş mi kontrol et. Kilitli değilse
+  // (henüz Atamalar sayfasında seçim yapılmamışsa) uygun öğretmenin olası
+  // yükü olarak say — böylece Atamalar sayfası hiç ziyaret edilmemiş olsa
+  // bile yoğunluk göstergesi gerçekçi kalır.
   let required = 0
-  if (myAssignments.length > 0) {
-    // Use actual assignments: each entry = one specific class-section + subject
-    for (const [key] of myAssignments) {
-      const pipeIdx = key.indexOf('|')
-      if (pipeIdx < 0) continue
-      const classKey = key.slice(0, pipeIdx)
-      const subjectId = key.slice(pipeIdx + 1)
-      const dashIdx = classKey.lastIndexOf('-')
-      const grade = dashIdx >= 0 ? classKey.slice(0, dashIdx) : classKey
-      const subj = subjects.find(s => s.id === subjectId)
-      if (!subj) continue
-      required += subj.weeklyHoursByGrade?.[grade] ?? 0
-    }
-  } else {
-    // Fallback: estimate from preferred grades × section count
-    const allGradeIds = gradesList.map(g => g.id)
-    for (const sid of getSubjectIds(t)) {
-      const subj = subjects.find(s => s.id === sid)
-      if (!subj) continue
-      const coveredGrades =
-        t.preferredGradesBySubject?.[sid]?.length
-          ? t.preferredGradesBySubject[sid]
-          : t.preferredGrades?.length
-          ? t.preferredGrades
-          : allGradeIds
-      for (const gid of coveredGrades) {
-        required += (subj.weeklyHoursByGrade?.[gid] ?? 0) * (sectionCount[gid] ?? 1)
-      }
+  for (const c of classKeys) {
+    for (const s of subjects) {
+      const hours = s.weeklyHoursByGrade?.[c.grade] ?? 0
+      if (hours <= 0) continue
+      if (!isTeacherAllowedForGrade(t, s.id, c.grade)) continue
+      const assignedTeacherId = assignments[`${c.key}|${s.id}`]
+      if (assignedTeacherId && assignedTeacherId !== t.id) continue
+      required += hours
     }
   }
 
@@ -143,10 +140,12 @@ export default function Ogretmenler() {
   const { dailyLessons, grades: gradeConfigs } = useSchool()
   const gradesList = useGrades()
   const slots = useMemo(() => Array.from({ length: Math.max(1, dailyLessons || 1) }, (_, i) => `S${i + 1}`), [dailyLessons])
-  const sectionCount = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const g of gradeConfigs) map[g.grade] = g.sections.length || 1
-    return map
+  const classKeys = useMemo(() => {
+    const out: { key: string; grade: string }[] = []
+    for (const g of gradeConfigs) {
+      for (const section of g.sections) out.push({ key: `${g.grade}-${section}`, grade: g.grade })
+    }
+    return out
   }, [gradeConfigs])
 
   const [query, setQuery] = useState('')
@@ -166,9 +165,9 @@ export default function Ogretmenler() {
         const matchBranch = branchFilter === 'all' ? true : ids.includes(branchFilter)
         return matchName && matchBranch
       })
-      .map(t => ({ t, util: computeUtilization(t, subjects, gradesList, dailyLessons, sectionCount, assignments) }))
+      .map(t => ({ t, util: computeUtilization(t, subjects, classKeys, dailyLessons, assignments) }))
       .sort((a, b) => b.util.pct - a.util.pct)
-  }, [teachers, query, branchFilter, subjects, gradesList, dailyLessons, sectionCount, assignments])
+  }, [teachers, query, branchFilter, subjects, classKeys, dailyLessons, assignments])
 
   const openCreate = () => { setEditing(null); setShowModal(true) }
   const openEdit = (t: Teacher) => { setEditing(t); setShowModal(true) }
