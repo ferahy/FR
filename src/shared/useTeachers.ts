@@ -21,8 +21,10 @@ export function useTeachers() {
   }, [setTeachers])
 
   const update = useCallback((id: string, next: Omit<Teacher, 'id'>) => {
+    // Var olan bir öğretmeni düzenlemek (uygunluk dahil) mevcut programı
+    // geçersiz kılmaz — kilitli hücreler/öğretmenler korunmalı, değişiklik
+    // sadece bir sonraki "Programları Oluştur"da hesaba katılır.
     setTeachers((prev) => prev.map((t) => (t.id === id ? { ...next, id } : t)))
-    invalidateGeneratedSchedule()
   }, [setTeachers])
 
   const remove = useCallback((id: string) => {
@@ -32,7 +34,6 @@ export function useTeachers() {
 
   const resetAllAvailability = useCallback(() => {
     setTeachers(prev => prev.map(t => ({ ...t, unavailable: {} })))
-    invalidateGeneratedSchedule()
   }, [setTeachers])
 
   return { teachers, add, update, remove, setTeachers, resetAllAvailability }
