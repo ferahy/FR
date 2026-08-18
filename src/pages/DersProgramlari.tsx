@@ -865,6 +865,8 @@ export default function DersProgramlari() {
           if (teacherOccupied.get(teacherId)?.has(occKey)) continue
           const blocked = teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)
           if (blocked) continue
+          // Aynı sınıfa günde max 3 ders kontrolü (gün değiştiği için hedef günün sayacı ayrı)
+          if (d2 !== day && (teacherClassDayCount.get(`${teacherId}|${classKey}|${d2}`) ?? 0) >= 3) continue
 
           // move
           workingTables[classKey][d2][s2] = current
@@ -872,6 +874,12 @@ export default function DersProgramlari() {
           teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
           if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
           teacherOccupied.get(teacherId)!.add(occKey)
+          if (d2 !== day) {
+            const oldKey = `${teacherId}|${classKey}|${day}`
+            const newKey = `${teacherId}|${classKey}|${d2}`
+            teacherClassDayCount.set(oldKey, Math.max(0, (teacherClassDayCount.get(oldKey) ?? 0) - 1))
+            teacherClassDayCount.set(newKey, (teacherClassDayCount.get(newKey) ?? 0) + 1)
+          }
           recomputeSubjectDays(classKey, subjId)
           return true
         }
@@ -908,12 +916,19 @@ export default function DersProgramlari() {
             const blocked = teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)
             if (blocked) continue
             if (!canPlaceWithRules(classKey, d2, s2, subjId, false)) continue
+            if (d2 !== day && (teacherClassDayCount.get(`${teacherId}|${classKey}|${d2}`) ?? 0) >= 3) continue
 
             workingTables[classKey][d2][s2] = current
             workingTables[classKey][day][si] = {}
             teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
             if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
             teacherOccupied.get(teacherId)!.add(occKey)
+            if (d2 !== day) {
+              const oldKey = `${teacherId}|${classKey}|${day}`
+              const newKey = `${teacherId}|${classKey}|${d2}`
+              teacherClassDayCount.set(oldKey, Math.max(0, (teacherClassDayCount.get(oldKey) ?? 0) - 1))
+              teacherClassDayCount.set(newKey, (teacherClassDayCount.get(newKey) ?? 0) + 1)
+            }
             recomputeSubjectDays(classKey, subjId)
             return true
           }
@@ -941,6 +956,7 @@ export default function DersProgramlari() {
               const blocked3 = targetTeacher?.unavailable?.[d3]?.includes(`S${s3 + 1}`)
               if (blocked3) continue
               if (!canPlaceWithRules(classKey, d3, s3, targetSubjId, false)) continue
+              if (d3 !== d2 && (teacherClassDayCount.get(`${targetTeacherId}|${classKey}|${d3}`) ?? 0) >= 3) continue
 
               // Şimdi current'ı da target'ın yerine koyabilir miyiz?
               const occKey2 = `${d2}-${s2}`
@@ -948,6 +964,7 @@ export default function DersProgramlari() {
               const blocked2 = teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)
               if (blocked2) continue
               if (!canPlaceWithRules(classKey, d2, s2, subjId, false)) continue
+              if (d2 !== day && (teacherClassDayCount.get(`${teacherId}|${classKey}|${d2}`) ?? 0) >= 3) continue
 
               // Zincir taşıma yap
               // 1. Target'ı yeni yere taşı
@@ -955,12 +972,24 @@ export default function DersProgramlari() {
               teacherOccupied.get(targetTeacherId)?.delete(`${d2}-${s2}`)
               if (!teacherOccupied.has(targetTeacherId)) teacherOccupied.set(targetTeacherId, new Set())
               teacherOccupied.get(targetTeacherId)!.add(occKey3)
+              if (d3 !== d2) {
+                const oldKey3 = `${targetTeacherId}|${classKey}|${d2}`
+                const newKey3 = `${targetTeacherId}|${classKey}|${d3}`
+                teacherClassDayCount.set(oldKey3, Math.max(0, (teacherClassDayCount.get(oldKey3) ?? 0) - 1))
+                teacherClassDayCount.set(newKey3, (teacherClassDayCount.get(newKey3) ?? 0) + 1)
+              }
 
               // 2. Current'ı target'ın yerine koy
               workingTables[classKey][d2][s2] = current
               teacherOccupied.get(teacherId)?.delete(`${day}-${si}`)
               if (!teacherOccupied.has(teacherId)) teacherOccupied.set(teacherId, new Set())
               teacherOccupied.get(teacherId)!.add(occKey2)
+              if (d2 !== day) {
+                const oldKey2 = `${teacherId}|${classKey}|${day}`
+                const newKey2 = `${teacherId}|${classKey}|${d2}`
+                teacherClassDayCount.set(oldKey2, Math.max(0, (teacherClassDayCount.get(oldKey2) ?? 0) - 1))
+                teacherClassDayCount.set(newKey2, (teacherClassDayCount.get(newKey2) ?? 0) + 1)
+              }
 
               // 3. Eski yeri boşalt
               workingTables[classKey][day][si] = {}
@@ -1354,6 +1383,8 @@ export default function DersProgramlari() {
           if (teacherOccupied.get(teacherId)?.has(`${d2}-${s2}`)) continue
           if (teacher?.unavailable?.[d2]?.includes(`S${s2 + 1}`)) continue
           if (!canPlaceWithRules(bck, d2, s2, bsid, false)) continue
+          // Aynı sınıfa günde max 3 ders kontrolü (gün değiştiği için hedef günün sayacı ayrı)
+          if (d2 !== day && (teacherClassDayCount.get(`${teacherId}|${bck}|${d2}`) ?? 0) >= 3) continue
 
           // Dersi yeni slota taşı
           workingTables[bck][d2][s2] = workingTables[bck][day][si]
@@ -1757,6 +1788,17 @@ export default function DersProgramlari() {
           if (a && b && !(a.classKey === b.classKey && a.day === b.day && a.si === b.si) && a.subjId !== b.subjId) {
             const gradeA = classGradeMap.get(a.classKey) ?? ''
             const gradeB = classGradeMap.get(b.classKey) ?? ''
+            // Bu takas, dersleri farklı sınıflar arasında taşıyabilir (a.classKey ile
+            // b.classKey farklı sınıf seviyelerinde olabilir). Bir dersin, müfredatında
+            // hiç yer almadığı bir sınıf seviyesine sızmasını engelle — aksi halde o
+            // sınıf ihtiyaç duymadığı bir ders alır ve asıl ihtiyacı olan dersten olur,
+            // bu da hiçbir eksik/deficit sayacına yansımadan sessizce kalıcılaşır.
+            const subjForA = subjects.find(s => s.id === b.subjId)
+            const subjForB = subjects.find(s => s.id === a.subjId)
+            const curriculumOk =
+              (subjForA?.weeklyHoursByGrade?.[gradeA] ?? 0) > 0 &&
+              (subjForB?.weeklyHoursByGrade?.[gradeB] ?? 0) > 0
+            if (!curriculumOk) return
             // Bu sınıflarda ilgili ders zaten başka bir öğretmene kilitliyse
             // (aynı sınıf-ders her zaman aynı öğretmeni kullanmalı), o öğretmeni zorunlu kıl.
             // Önce Atamalar sayfasındaki kalıcı kilide bak (o her zaman geçerlidir),
