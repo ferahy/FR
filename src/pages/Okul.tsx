@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocalStorage } from '../shared/useLocalStorage'
+import { invalidateGeneratedSchedule } from '../shared/invalidateSchedule'
 import Modal from '../components/Modal'
 
 type GradeConfig = {
@@ -39,6 +40,7 @@ export default function Okul() {
 
   const updateDailyLessons = (val: number) => {
     setConfig((c) => ({ ...c, dailyLessons: Math.max(1, Math.min(12, val)) }))
+    invalidateGeneratedSchedule()
   }
 
   const updateSchoolName = (name: string) => {
@@ -71,6 +73,7 @@ export default function Okul() {
       return
     }
     setConfig((c) => ({ ...c, grades: [...c.grades, { grade, sections: ['A'] }] }))
+    invalidateGeneratedSchedule()
     setShowAddGrade(false)
   }
 
@@ -80,6 +83,7 @@ export default function Okul() {
 
   const removeGrade = (grade: string) => {
     setConfig((c) => ({ ...c, grades: c.grades.filter((g) => g.grade !== grade) }))
+    invalidateGeneratedSchedule()
   }
 
   const addSection = (grade: string) => {
@@ -91,6 +95,7 @@ export default function Okul() {
         return { ...g, sections: [...g.sections, next] }
       }),
     }))
+    invalidateGeneratedSchedule()
   }
 
   const removeSection = (grade: string, section: string) => {
@@ -102,6 +107,7 @@ export default function Okul() {
           : g
       ),
     }))
+    invalidateGeneratedSchedule()
   }
 
   return (

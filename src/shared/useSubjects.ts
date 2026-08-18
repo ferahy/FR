@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useLocalStorage } from './useLocalStorage'
+import { invalidateGeneratedSchedule } from './invalidateSchedule'
 import type { Subject } from './types'
 
 // v2 key to start with empty defaults (scoped to auth user)
@@ -56,15 +57,18 @@ export function useSubjects() {
       if (exists) return prev
       return [...prev, subject]
     })
+    invalidateGeneratedSchedule()
     return subject
   }, [setSubjects])
 
   const update = useCallback((id: string, next: Omit<Subject, 'id'>) => {
     setSubjects((prev) => prev.map((s) => (s.id === id ? { ...next, id } : s)))
+    invalidateGeneratedSchedule()
   }, [setSubjects])
 
   const remove = useCallback((id: string) => {
     setSubjects((prev) => prev.filter((s) => s.id !== id))
+    invalidateGeneratedSchedule()
   }, [setSubjects])
 
   const resetToDefaults = useCallback(() => {
@@ -89,6 +93,7 @@ export function useSubjects() {
       }
     })
     setSubjects(defaults)
+    invalidateGeneratedSchedule()
   }, [setSubjects])
 
   return { subjects, add, update, remove, setSubjects, resetToDefaults }

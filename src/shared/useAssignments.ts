@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useLocalStorage } from './useLocalStorage'
+import { invalidateGeneratedSchedule } from './invalidateSchedule'
 import type { Assignments } from './types'
 
 const STORAGE_KEY = 'ferah_assignments_v1'
@@ -19,6 +20,7 @@ export function useAssignments() {
       }
       return { ...prev, [key]: teacherId }
     })
+    invalidateGeneratedSchedule()
   }, [setAssignments])
 
   // Belirli bir sınıf ve ders için atanan öğretmeni getir
@@ -29,6 +31,7 @@ export function useAssignments() {
   // Tüm atamaları sıfırla
   const resetAll = useCallback(() => {
     setAssignments({})
+    invalidateGeneratedSchedule()
   }, [setAssignments])
 
   // Belirli bir öğretmenin kaç sınıfa atandığını say

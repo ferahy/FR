@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useLocalStorage } from './useLocalStorage'
+import { invalidateGeneratedSchedule } from './invalidateSchedule'
 import type { Teacher } from './types'
 
 // v2 key to start with empty defaults (scoped to auth user)
@@ -15,19 +16,23 @@ export function useTeachers() {
   const add = useCallback((t: Omit<Teacher, 'id'>) => {
     const teacher: Teacher = { ...t, id: genId() }
     setTeachers((prev) => [...prev, teacher])
+    invalidateGeneratedSchedule()
     return teacher
   }, [setTeachers])
 
   const update = useCallback((id: string, next: Omit<Teacher, 'id'>) => {
     setTeachers((prev) => prev.map((t) => (t.id === id ? { ...next, id } : t)))
+    invalidateGeneratedSchedule()
   }, [setTeachers])
 
   const remove = useCallback((id: string) => {
     setTeachers((prev) => prev.filter((t) => t.id !== id))
+    invalidateGeneratedSchedule()
   }, [setTeachers])
 
   const resetAllAvailability = useCallback(() => {
     setTeachers(prev => prev.map(t => ({ ...t, unavailable: {} })))
+    invalidateGeneratedSchedule()
   }, [setTeachers])
 
   return { teachers, add, update, remove, setTeachers, resetAllAvailability }
