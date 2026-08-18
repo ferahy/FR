@@ -1770,8 +1770,10 @@ export default function DersProgramlari() {
             const gradeB = classGradeMap.get(b.classKey) ?? ''
             // Bu sınıflarda ilgili ders zaten başka bir öğretmene kilitliyse
             // (aynı sınıf-ders her zaman aynı öğretmeni kullanmalı), o öğretmeni zorunlu kıl.
-            const requiredAtA = classSubjectTeacher[a.classKey]?.[b.subjId]
-            const requiredAtB = classSubjectTeacher[b.classKey]?.[a.subjId]
+            // Önce Atamalar sayfasındaki kalıcı kilide bak (o her zaman geçerlidir),
+            // yoksa bu oturuma özgü geçici kilide düş.
+            const requiredAtA = getAssignedTeacher(a.classKey, b.subjId) ?? classSubjectTeacher[a.classKey]?.[b.subjId]
+            const requiredAtB = getAssignedTeacher(b.classKey, a.subjId) ?? classSubjectTeacher[b.classKey]?.[a.subjId]
 
             unplaceCell(a.classKey, a.day, a.si)
             unplaceCell(b.classKey, b.day, b.si)
