@@ -3,7 +3,7 @@ import Modal from '../components/Modal'
 import Toasts, { pushToast } from '../components/Toast'
 import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
-import type { Assignments, Day, Subject, Teacher } from '../shared/types'
+import { getClassHours, type Assignments, type Day, type Subject, type Teacher } from '../shared/types'
 import { useSchool } from '../shared/useSchool'
 import { useGrades } from '../shared/useGrades'
 import { useAssignments } from '../shared/useAssignments'
@@ -59,7 +59,7 @@ function computeUtilization(
   let required = 0
   for (const c of classKeys) {
     for (const s of subjects) {
-      const hours = s.weeklyHoursByGrade?.[c.grade] ?? 0
+      const hours = getClassHours(s, c.key, c.grade)
       if (hours <= 0) continue
       const assignedTeacherId = assignments[`${c.key}|${s.id}`]
       const assignedTeacher = assignedTeacherId ? teachers.find(other => other.id === assignedTeacherId) : undefined
