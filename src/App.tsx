@@ -58,7 +58,7 @@ export default function App() {
       {page === 'ogretmen-programlari' && <OgretmenProgramlari />}
 
       <footer className="site-footer">
-        <div className="footer-box glass p-6 footer-gradient">
+        <div className="footer-box p-6 footer-gradient">
           <div className="footer-text">
             Fenerbahçe tüm şahsiyet ve kişilerin üstüdür. Fenerbahçe sonsuza dek yaşayacaktır, yaşlandıkça güzelleşecektir.
           </div>

@@ -1,5 +1,6 @@
 import { PAGES } from '../shared/useHashRoute'
 import type { PageKey } from '../shared/useHashRoute'
+import fokLogo from '../assets/fok.png'
 
 type Props = {
   current: PageKey
@@ -10,7 +11,7 @@ export default function TopNav({ current, onNavigate }: Props) {
   return (
     <div className="topbar glass">
       <div className="brand">
-        <div className="title-lg grad-text brand-fr">RFT</div>
+        <img src={fokLogo} alt="Fok" style={{ height: 36, width: 36, objectFit: 'contain' }} />
       </div>
 
       <div className="nav-wrap" style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center' }}>

@@ -336,15 +336,17 @@ body{
 
 /* Global footer */
 .site-footer{margin-top:28px;margin-bottom:40px;padding:0 12px}
-.footer-box{position:relative;overflow:hidden;border:2px solid #ffffff;border-radius:16px;box-shadow:0 12px 30px #0007}
-.footer-box:before{content:"";position:absolute;inset:-1px;border-radius:18px;background:
-  radial-gradient(640px 220px at 12% -10%, #F7D100B3 15%, transparent 62%),
-  radial-gradient(640px 220px at 88% 120%, #041E42B3 18%, transparent 62%);
-  filter: blur(24px);opacity:.9;pointer-events:none}
-.footer-gradient{background:
-  linear-gradient(135deg, #F7D10044 0%, #F7D1002e 25%, #041E4233 60%, #041E424d 100%),
-  linear-gradient(160deg,#0f172a,#1e293b)}
-.footer-text{position:relative;z-index:1;text-align:center;font-size:13px;line-height:1.6;font-weight:800}
+.footer-box{position:relative;overflow:hidden}
+.footer-gradient{background:none}
+.footer-text{
+  position:relative;z-index:1;text-align:center;
+  font-family:'Great Vibes','Brush Script MT',cursive;
+  font-size:26px;line-height:1.7;font-weight:400;letter-spacing:.3px;
+  background:linear-gradient(135deg,#fff6d5 0%,#e8c968 22%,#b8860b 48%,#f6dd8a 70%,#fff6d5 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  -webkit-text-stroke:0.6px #d8dee6;
+  text-shadow:0 1px 0 #6b4f14,0 2px 4px #00000066;
+}
 .seg svg{opacity:.9}
 
 .color-dot{display:inline-block;width:10px;height:10px;border-radius:9999px;margin-right:6px;vertical-align:middle;border:1px solid #ffffff66}
