@@ -86,6 +86,56 @@ body{
   .dropdown-nav{display:none}
 }
 
+/* ─── Ocean-themed top nav (fok mascot area) ─────────────────────────────── */
+.ocean-topbar{
+  position:relative;
+  overflow:hidden;
+  background:
+    radial-gradient(120% 180% at 12% -20%,#22d3ee2e,transparent 55%),
+    radial-gradient(90% 160% at 100% 120%,#0891b22e,transparent 60%),
+    linear-gradient(155deg,#0c4a6e40,#0f172a00 65%);
+}
+.ocean-waves{position:absolute;inset:auto 0 0 0;height:34px;overflow:hidden;pointer-events:none;z-index:0}
+.ocean-waves .wave{position:absolute;left:0;bottom:-2px;width:200%;height:100%;fill:currentColor}
+.ocean-waves .wave-back{color:#0e7490;opacity:.32;animation:waveDrift 22s linear infinite}
+.ocean-waves .wave-front{color:#22d3ee;opacity:.4;animation:waveDrift 13s linear infinite reverse}
+.ocean-bubbles{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.ocean-bubbles .bubble{position:absolute;bottom:-10px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#ffffffb0,#67e8f94d 70%,transparent 75%);animation:bubbleRise 7s ease-in infinite}
+.ocean-topbar>.brand,.ocean-topbar>.nav-wrap{position:relative;z-index:1}
+.ocean-ring{
+  position:relative;
+  display:inline-flex;align-items:center;justify-content:center;
+  width:52px;height:52px;border-radius:50%;
+  background:radial-gradient(circle at 32% 28%,#a5f3fc70,transparent 60%),linear-gradient(160deg,#0e7490,#0c4a6e);
+  border:1.5px solid #67e8f970;
+  box-shadow:0 0 0 4px #22d3ee14,0 8px 22px #0891b255,inset 0 1px 0 #ffffff33;
+  animation:oceanBob 4.5s ease-in-out infinite;
+}
+.ocean-ring:before,.ocean-ring:after{
+  content:"";position:absolute;inset:-6px;border-radius:50%;
+  border:1px solid #22d3ee40;
+  animation:oceanRipple 3.4s ease-out infinite;
+}
+.ocean-ring:after{animation-delay:1.7s}
+.ocean-ring img{width:34px;height:34px;object-fit:contain;filter:drop-shadow(0 2px 5px #00000066);position:relative;z-index:1}
+.ocean-tab.tab.active{
+  background:linear-gradient(135deg,#22d3ee66,#5eead466);
+  border-color:#a5f3fc70;
+  box-shadow:0 4px 14px #0891b240,inset 0 1px 0 #ffffff40;
+  color:#ecfeff;
+}
+@keyframes waveDrift{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes bubbleRise{
+  0%{transform:translateY(0) translateX(0);opacity:0}
+  10%{opacity:.8}
+  100%{transform:translateY(-60px) translateX(6px);opacity:0}
+}
+@keyframes oceanBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes oceanRipple{0%{transform:scale(.85);opacity:.65}100%{transform:scale(1.5);opacity:0}}
+@media (prefers-reduced-motion: reduce){
+  .ocean-waves .wave,.ocean-bubbles .bubble,.ocean-ring,.ocean-ring:before,.ocean-ring:after{animation:none !important}
+}
+
 /* Fancy grade card */
 .grade-card{position:relative;overflow:hidden}
 .grade-card:before{content:"";position:absolute;inset:-1px;border-radius:18px;background:linear-gradient(135deg,#ffffff12,#ffffff0a);filter:blur(26px);z-index:0}
