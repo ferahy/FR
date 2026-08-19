@@ -195,7 +195,7 @@ export default function Siniflar() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="muted" style={{ fontSize: 13 }}>
-            Saatleri buradan değiştirdiğinde sadece bu şube etkilenir. "Dersler" sayfasından değiştirirsen o değişiklik tüm şubelerin ortak varsayılanı olur.
+            Saatleri buradan değiştirdiğinde sadece bu şube etkilenir. Tüm şubelere aynı anda aynı değeri vermek için sınıf başlığındaki "Tüm Şubeleri Eşitle" butonunu kullan.
           </div>
 
           {openSubjects.length === 0 ? (
