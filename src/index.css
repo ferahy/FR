@@ -105,19 +105,10 @@ body{
 .ocean-ring{
   position:relative;
   display:inline-flex;align-items:center;justify-content:center;
-  width:52px;height:52px;border-radius:50%;
-  background:radial-gradient(circle at 32% 28%,#a5f3fc70,transparent 60%),linear-gradient(160deg,#0e7490,#0c4a6e);
-  border:1.5px solid #67e8f970;
-  box-shadow:0 0 0 4px #22d3ee14,0 8px 22px #0891b255,inset 0 1px 0 #ffffff33;
+  width:52px;height:52px;
   animation:oceanBob 4.5s ease-in-out infinite;
 }
-.ocean-ring:before,.ocean-ring:after{
-  content:"";position:absolute;inset:-6px;border-radius:50%;
-  border:1px solid #22d3ee40;
-  animation:oceanRipple 3.4s ease-out infinite;
-}
-.ocean-ring:after{animation-delay:1.7s}
-.ocean-ring img{width:34px;height:34px;object-fit:contain;filter:drop-shadow(0 2px 5px #00000066);position:relative;z-index:1}
+.ocean-ring img{width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 4px 8px #00000066);position:relative;z-index:1}
 .ocean-tab.tab.active{
   background:linear-gradient(135deg,#22d3ee66,#5eead466);
   border-color:#a5f3fc70;
@@ -131,9 +122,8 @@ body{
   100%{transform:translateY(-60px) translateX(6px);opacity:0}
 }
 @keyframes oceanBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
-@keyframes oceanRipple{0%{transform:scale(.85);opacity:.65}100%{transform:scale(1.5);opacity:0}}
 @media (prefers-reduced-motion: reduce){
-  .ocean-waves .wave,.ocean-bubbles .bubble,.ocean-ring,.ocean-ring:before,.ocean-ring:after{animation:none !important}
+  .ocean-waves .wave,.ocean-bubbles .bubble,.ocean-ring{animation:none !important}
 }
 
 /* Fancy grade card */
