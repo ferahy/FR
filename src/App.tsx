@@ -257,24 +257,41 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
             <div style={{ display: 'grid', gap: 12, lineHeight: 1.6 }}>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>Okul Bilgisi</div>
-                <div>- Okul / Müdür adı alanlarını doldurun; otomatik saklanır.</div>
+                <div>- Okul / Müdür adı ve günlük ders sayısı; otomatik saklanır.</div>
+                <div>- Sınıf ve şube ekleyip silin. Yeni bir sınıf eklediğinizde diğer tüm sayfalara (Dersler, Sınıflar, Öğretmenler, Atamalar, Ders Programları) otomatik yansır — ama derslerin o sınıf için haftalık saati olmadan Atamalar'da sütun görünmez, önce Dersler'den saatleri girin.</div>
               </div>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>Dersler</div>
-                <div>- Zorunlu saatler sınıf seviyesine göre tanımlı. “Zorunlu Dersler” butonuyla kontrol edin.</div>
-                <div>- Ders kuralları (günlük üst sınır, blok, öncelik) yerleşimde dikkate alınır.</div>
+                <div>- Her ders için sınıf seviyesine göre varsayılan haftalık saat tanımlanır.</div>
+                <div>- Ders kuralları (günlük üst sınır, blok, ardışık üst sınır, min gün, öncelik) yerleşimde dikkate alınır.</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Sınıflar</div>
+                <div>- Bir şubenin belirli bir dersten Dersler'deki sınıf varsayılanından farklı (0 dahil) saat alması gerekiyorsa buradan şubeye özel sapma girilir.</div>
+                <div>- “Eşitle” ile bir sınıf seviyesindeki tüm şubelerin saatlerini tek bir şubeninkiyle aynı yapabilirsiniz.</div>
               </div>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>Öğretmenler</div>
-                <div>- Branş ve tercih sınıfları seçin; uygun olmayan saatleri işaretleyin.</div>
-                <div>- Aynı ders/aynı sınıf seviyesi şubelerine farklı öğretmen atanır; tercihlere dikkat edin.</div>
-                <div>- “Uygunlukları Sıfırla” ile tüm uygunlukları temizleyebilirsiniz.</div>
+                <div>- Branş ve tercih sınıfları seçin; uygun olmayan saatleri “Uygunluk” ile işaretleyin.</div>
+                <div>- Yoğunluk rozeti (%) o öğretmenin, kilitlenmemiş atamalar uygun öğretmenler arasında eşit paylaştırılırsa alacağı tahmini yükü gösterir — gerçek oluşturulmuş programdaki fiili saat sayısıyla (Öğretmen Programları'ndaki gibi) birebir aynı olması gerekmez, sadece bir tahmindir.</div>
+                <div>- “Uygunlukları Sıfırla” ile tüm öğretmenlerin uygunluklarını temizleyebilirsiniz.</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Atamalar</div>
+                <div>- Bir ders/şube için tek uygun öğretmen varsa otomatik atanır; birden fazla aday varsa elle seçim yapmanız istenir.</div>
+                <div>- “Sıfırla” tüm elle yapılmış atamaları temizler (dersler/saatler etkilenmez).</div>
               </div>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>Ders Programları</div>
-                <div>- “Programları Oluştur” 180 sn boyunca her tikte 100 deneme dener ve en iyi sonucu tutar.</div>
-                <div>- İlerleme bandı sarı-lacivert; süre ve deneme sayısını gösterir. “Durdur” ile anında iptal edebilirsiniz.</div>
-                <div>- Eksik dersler paneli kalanları ve önerileri listeler.</div>
+                <div>- “Programları Oluştur”, siz “Durdur”a basana ya da en fazla 15 dakika geçene kadar arka planda binlerce kombinasyon dener ve en iyi (en az eksikli) sonucu tutar. İlerleme çubuğu geçen süreyi ve deneme sayısını gösterir.</div>
+                <div>- Bir hücreyi sürükleyip bırakarak (veya dokunarak) taşıyabilir, kilit simgesiyle sabitleyebilirsiniz — kilitli dersler yeniden oluşturmada korunur.</div>
+                <div>- Her sınıf kartındaki “Zorunlu Dersler” o şubenin haftalık ders saati dağılımını gösterir.</div>
+                <div>- Eksik dersler paneli kalanları ve olası nedenlerini (öğretmen uygunluğu/tercih kısıtları) listeler.</div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Öğretmen Programları</div>
+                <div>- Her öğretmenin kendi haftalık programını ve doluluk oranını gösterir.</div>
+                <div>- “Kilitle” ile bir öğretmenin programını sabitleyin; program yeniden oluşturulduğunda kilitli öğretmenlerin programı değişmez.</div>
               </div>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>Bulut</div>
@@ -284,7 +301,7 @@ function AuthBar({ onLogout }: { onLogout: () => void }) {
               </div>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>Çıktılar</div>
-                <div>- 📄 Sınıf/Öğretmen EL PDF; 📊 Çarşaf PDF butonlarıyla yazdır/indir.</div>
+                <div>- Ders Programları ve Öğretmen Programları sayfalarındaki 📄 EL PDF / 📊 Çarşaf PDF butonlarıyla yazdır/indir.</div>
               </div>
               <div style={{ fontSize: 12, color: '#94a3b8' }}>
                 İpucu: Öğretmen uygunluklarını adım adım daraltıp her seferinde “Programları Oluştur”u denemek yerleşimi hızlandırır.
