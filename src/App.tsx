@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { useHashRoute } from './shared/useHashRoute'
 import { saveToCloud, loadFromCloud } from './shared/cloudSync'
 import KantePopup from './components/KantePopup'
-import fbLogo from './assets/fbfb.png'
+import frLogo from './assets/fr.png'
 
 export default function App() {
   const { page, navigate } = useHashRoute('okul')
@@ -97,10 +97,9 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
         <div className="glass" style={{ padding: 32, background: 'rgba(15,23,42,0.82)', border: '1px solid rgba(255,255,255,0.04)', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
-              <img src={fbLogo} alt="Fenerbahçe" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <img src={frLogo} alt="FR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>✨</div>
               <div style={{ color: '#94a3b8', fontSize: 14 }}>Ders programı hazırlamak için giriş yap</div>
             </div>
           </div>
