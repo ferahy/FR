@@ -47,8 +47,15 @@ export default function Atamalar() {
     })
   }, [filteredClasses])
 
+  // Sınıf ortalaması VEYA en az bir şubenin kendine özel sapması saat>0 olan
+  // dersler — sadece grade varsayılanına bakmak, yalnızca tek bir şubeye
+  // (örn. Dersler'den 5/C'ye) eklenmiş bir dersin sütununu hiç göstermez.
   const getSubjectsForGrade = (gradeId: string) => {
-    return subjects.filter(s => (s.weeklyHoursByGrade[gradeId] ?? 0) > 0)
+    const classKeys = classes.filter(c => c.grade === gradeId).map(c => c.key)
+    return subjects.filter(s =>
+      (s.weeklyHoursByGrade[gradeId] ?? 0) > 0 ||
+      classKeys.some(ck => getClassHours(s, ck, gradeId) > 0)
+    )
   }
 
   const getEligibleTeachers = (subjectId: string, gradeId: string): Teacher[] => {

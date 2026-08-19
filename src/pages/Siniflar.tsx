@@ -57,9 +57,16 @@ export default function Siniflar() {
     })
   }, [filteredClasses])
 
-  // Bir sınıf seviyesinin müfredat havuzu: en az bir şubede saati olan dersler.
+  // Bir sınıf seviyesinin müfredat havuzu: sınıf ortalaması VEYA en az bir
+  // şubenin kendine özel sapması saat>0 olan dersler. Sadece grade
+  // varsayılanına bakmak, yalnızca tek bir şubeye (örn. Dersler'den 5/C'ye)
+  // eklenmiş bir dersi listeden düşürür.
   const getSubjectsForGrade = (gradeId: string) => {
-    return subjects.filter((s) => (s.weeklyHoursByGrade[gradeId] ?? 0) > 0)
+    const classKeys = classes.filter((c) => c.grade === gradeId).map((c) => c.key)
+    return subjects.filter((s) =>
+      (s.weeklyHoursByGrade[gradeId] ?? 0) > 0 ||
+      classKeys.some((ck) => getClassHours(s, ck, gradeId) > 0)
+    )
   }
 
   // Belirli bir şubenin (5/A gibi) fiilen aldığı ders saatleri toplamı —

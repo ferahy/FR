@@ -76,10 +76,13 @@ export default function Dersler() {
     const q = query.trim().toLowerCase()
     return subjects.filter((s) => {
       const matchName = q ? s.name.toLowerCase().includes(q) : true
-      const matchGrade = gradeFilter === 'all' ? true : (s.weeklyHoursByGrade[gradeFilter] ?? 0) > 0
+      const matchGrade = gradeFilter === 'all'
+        ? true
+        : (s.weeklyHoursByGrade[gradeFilter] ?? 0) > 0 || getClassBreakdown(s, gradeFilter).some((b) => b.hours > 0)
       return matchName && matchGrade
     })
-  }, [subjects, query, gradeFilter])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- getClassBreakdown derives only from subjects/school.grades, both already listed
+  }, [subjects, query, gradeFilter, school.grades])
 
   const openCreate = () => {
     setEditing(null)
