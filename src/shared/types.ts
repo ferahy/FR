@@ -12,9 +12,21 @@ export type Subject = {
   name: string
   abbreviation?: string
   weeklyHoursByGrade: Record<string, number>
+  // Şubeye özel saat sapması (opsiyonel). Key: classKey (örn. "5-A").
+  // Tanımlıysa weeklyHoursByGrade[grade] yerine bu değer kullanılır —
+  // 0 dahil, çünkü bir şubenin dersi hiç almadığını belirtmek de geçerli.
+  weeklyHoursByClass?: Record<string, number>
   rule?: SubjectRule
   color?: string
   priority?: boolean
+}
+
+// Bir dersin belirli bir şube için haftalık saatini çözer: önce şubeye özel
+// sapma (weeklyHoursByClass), yoksa sınıf seviyesinin varsayılanı
+// (weeklyHoursByGrade) kullanılır.
+export function getClassHours(subject: Subject, classKey: string, gradeId: string): number {
+  const override = subject.weeklyHoursByClass?.[classKey]
+  return override !== undefined ? override : (subject.weeklyHoursByGrade[gradeId] ?? 0)
 }
 
 export type GradeItem = {

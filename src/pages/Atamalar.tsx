@@ -5,6 +5,7 @@ import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
 import { useAssignments } from '../shared/useAssignments'
 import type { Teacher } from '../shared/types'
+import { getClassHours } from '../shared/types'
 
 export default function Atamalar() {
   const school = useSchool()
@@ -75,6 +76,7 @@ export default function Atamalar() {
     for (const c of classes) {
       const gradeSubjects = getSubjectsForGrade(c.grade)
       for (const s of gradeSubjects) {
+        if (getClassHours(s, c.key, c.grade) <= 0) continue
         const eligible = getEligibleTeachers(s.id, c.grade)
         const current = getAssignment(c.key, s.id)
         if (eligible.length === 1) {
@@ -95,6 +97,7 @@ export default function Atamalar() {
     for (const c of classes) {
       const gradeSubjects = getSubjectsForGrade(c.grade)
       for (const s of gradeSubjects) {
+        if (getClassHours(s, c.key, c.grade) <= 0) continue
         const eligible = getEligibleTeachers(s.id, c.grade)
         if (eligible.length <= 1) continue
         total++
@@ -248,6 +251,17 @@ export default function Atamalar() {
                         {c.section}
                       </td>
                       {gradeSubjects.map(s => {
+                        // Bu şube için saat sapmayla 0'a çekilmişse (Sınıflar
+                        // sayfasından kaldırılmış), atama hücresi anlamsız —
+                        // boş bırak.
+                        if (getClassHours(s, c.key, c.grade) <= 0) {
+                          return (
+                            <td key={s.id} style={{ padding: '8px 12px' }}>
+                              <span style={{ fontSize: 12, color: '#475569' }}>—</span>
+                            </td>
+                          )
+                        }
+
                         const currentTeacherId = getAssignment(c.key, s.id)
                         const eligible = getEligibleTeachers(s.id, c.grade)
 

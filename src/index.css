@@ -38,6 +38,10 @@ body{
 .chip .close{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:8px;background:#ffffff0f;border:1px solid #ffffff2e;cursor:pointer}
 .chip-add{display:inline-flex;align-items:center;gap:8px;background:#ffffff0f;border:1px dashed #ffffff40;border-radius:9999px;padding:6px 12px;cursor:pointer}
 .chip-add:hover{background:#ffffff1a}
+/* Compact clickable number pill — e.g. Dersler tablosundaki şube saatleri */
+.hour-chip{display:inline-flex;align-items:center;gap:5px;background:#ffffff12;border:1px solid #ffffff2e;border-radius:8px;padding:3px 9px;font:inherit;color:inherit;cursor:pointer;transition:background .12s ease,border-color .12s ease,transform .08s ease}
+.hour-chip:hover{background:#ffffff22;border-color:#ffffff45;transform:translateY(-1px)}
+.hour-chip:focus-visible{outline:2px solid #93c5fd99;outline-offset:2px}
 /* Green success variant for add actions */
 .chip-add.chip-success{background:linear-gradient(135deg,#22c55e33,#16a34a26);border:1px solid #22c55e66;color:#e3ffe9}
 .chip-add.chip-success:hover{background:linear-gradient(135deg,#22c55e44,#16a34a33);border-color:#22c55e88}

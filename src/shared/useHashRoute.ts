@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 export type PageKey =
   | 'okul'
   | 'dersler'
+  | 'siniflar'
   | 'ogretmenler'
   | 'atamalar'
   | 'ders-programlari'
@@ -38,6 +39,7 @@ export function useHashRoute(defaultPage: PageKey = 'okul') {
 export const PAGES: { key: PageKey; label: string }[] = [
   { key: 'okul', label: 'Okul' },
   { key: 'dersler', label: 'Dersler' },
+  { key: 'siniflar', label: 'Sınıflar' },
   { key: 'ogretmenler', label: 'Öğretmenler' },
   { key: 'atamalar', label: 'Atamalar' },
   { key: 'ders-programlari', label: 'Ders Programları' },
@@ -48,6 +50,7 @@ export function isValidPage(p: string): p is PageKey {
   return (
     p === 'okul' ||
     p === 'dersler' ||
+    p === 'siniflar' ||
     p === 'ogretmenler' ||
     p === 'atamalar' ||
     p === 'ders-programlari' ||

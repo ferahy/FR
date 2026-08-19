@@ -8,6 +8,7 @@ import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
 import { useAssignments } from '../shared/useAssignments'
 import type { Day, Subject, Teacher } from '../shared/types'
+import { getClassHours } from '../shared/types'
 import { useLocalStorage } from '../shared/useLocalStorage'
 import { generateClassHandbookHTML, generateClassSheetHTML } from '../shared/htmlPdfGenerator'
 import { getSubjectAbbreviation, getTeacherAbbreviation } from '../shared/pdfUtils'
@@ -76,7 +77,7 @@ export default function DersProgramlari() {
 
   const [gradeFilter, setGradeFilter] = useState<string>('all')
   const [showSheet, setShowSheet] = useState(false)
-  const [requirementsGrade, setRequirementsGrade] = useState<string | null>(null)
+  const [requirementsClass, setRequirementsClass] = useState<{ key: string; grade: string; section: string } | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationStart, setGenerationStart] = useState<number | null>(null)
   const [triedCount, setTriedCount] = useState(0)
@@ -402,7 +403,7 @@ export default function DersProgramlari() {
         const assignedTeacherId = assignments[csKey]
         if (!assignedTeacherId) continue
         coveredClassSubjects.add(csKey)
-        const hours = s.weeklyHoursByGrade[c.grade] ?? 0
+        const hours = getClassHours(s, c.key, c.grade)
         if (hours <= 0) continue
         assignedHoursByTeacher.set(assignedTeacherId, (assignedHoursByTeacher.get(assignedTeacherId) ?? 0) + hours)
       }
@@ -427,11 +428,11 @@ export default function DersProgramlari() {
             ? t.preferredGrades
             : allGradeIds
         for (const gid of coveredGrades) {
-          const hours = subj.weeklyHoursByGrade?.[gid] ?? 0
-          if (hours <= 0) continue
           for (const c of classes) {
             if (c.grade !== gid) continue
             if (coveredClassSubjects.has(`${c.key}|${sid}`)) continue
+            const hours = getClassHours(subj, c.key, gid)
+            if (hours <= 0) continue
             totalReq += hours
           }
         }
@@ -525,7 +526,7 @@ export default function DersProgramlari() {
     for (const c of classes) {
       const gradeId = c.grade
       for (const s of subjects) {
-        const totalNeeded = s.weeklyHoursByGrade[gradeId] ?? 0
+        const totalNeeded = getClassHours(s, c.key, gradeId)
         if (totalNeeded <= 0) continue
 
         // Mevcut programda zaten yerleşmiş olanları çıkar
@@ -534,8 +535,8 @@ export default function DersProgramlari() {
         if (remaining <= 0) continue
 
         const isPriority = (s.priority ?? true) && gradeId !== 'Özel Eğitim'
-        const prefersBlocks = prefersBlock(s, gradeId)
-        const isBed = isMandatoryBlock(s, gradeId)
+        const prefersBlocks = prefersBlock(s, c.key, gradeId)
+        const isBed = isMandatoryBlock(s, c.key, gradeId)
         const pairs = Math.floor(remaining / 2)
         let blocks = 0
         let singles = remaining % 2
@@ -588,8 +589,10 @@ export default function DersProgramlari() {
       const eb = eligibleTeacherCount(b.subjId, b.gradeId)
       if (ea !== eb) return ea - eb
       // 7. Çok saatli dersler önce
-      const ha = subjects.find(s => s.id === a.subjId)?.weeklyHoursByGrade[a.gradeId] ?? 0
-      const hb = subjects.find(s => s.id === b.subjId)?.weeklyHoursByGrade[b.gradeId] ?? 0
+      const subjA = subjects.find(s => s.id === a.subjId)
+      const subjB = subjects.find(s => s.id === b.subjId)
+      const ha = subjA ? getClassHours(subjA, a.classKey, a.gradeId) : 0
+      const hb = subjB ? getClassHours(subjB, b.classKey, b.gradeId) : 0
       return hb - ha
     })
 
@@ -1077,7 +1080,7 @@ export default function DersProgramlari() {
       let placed = false
       const gradeId = classGradeMap.get(classKey) ?? ''
       const subj = subjects.find(s => s.id === subjId)
-      const isMandatory = subj ? isMandatoryBlock(subj, gradeId) : false
+      const isMandatory = subj ? isMandatoryBlock(subj, classKey, gradeId) : false
 
       // Blok dersi önce blok olarak, kısıtları esneterek dene
       if (isBlock && !placed) {
@@ -1161,7 +1164,7 @@ export default function DersProgramlari() {
       const { classKey, subjId, isBlock } = lesson
       const gradeId = classGradeMap.get(classKey) ?? ''
       const subjForMandatoryCheck = subjects.find(s => s.id === subjId)
-      const isMandatory = subjForMandatoryCheck ? isMandatoryBlock(subjForMandatoryCheck, gradeId) : false
+      const isMandatory = subjForMandatoryCheck ? isMandatoryBlock(subjForMandatoryCheck, classKey, gradeId) : false
       let placedHere = false
 
       if (isBlock) {
@@ -1542,12 +1545,12 @@ export default function DersProgramlari() {
         }
 
         for (const s of subjects) {
-          const totalNeeded = s.weeklyHoursByGrade[gradeId] ?? 0
+          const totalNeeded = getClassHours(s, c.key, gradeId)
           if (totalNeeded <= 0) continue
           let missing = totalNeeded - (currentCounts[s.id] ?? 0)
           if (missing <= 0) continue
 
-          const isMandatory = isMandatoryBlock(s, gradeId)
+          const isMandatory = isMandatoryBlock(s, c.key, gradeId)
 
           if (isMandatory) {
             while (missing >= 2) {
@@ -1655,13 +1658,13 @@ export default function DersProgramlari() {
           }
         }
         for (const s of subjects) {
-          const totalNeeded = s.weeklyHoursByGrade[gradeId] ?? 0
+          const totalNeeded = getClassHours(s, c.key, gradeId)
           if (totalNeeded <= 0) continue
           const missing = totalNeeded - (currentCounts[s.id] ?? 0)
           if (missing <= 0) continue
           allDeficits.push({
             classKey: c.key, gradeId, subjId: s.id, missing,
-            isMandatory: isMandatoryBlock(s, gradeId),
+            isMandatory: isMandatoryBlock(s, c.key, gradeId),
           })
         }
       }
@@ -1768,10 +1771,10 @@ export default function DersProgramlari() {
               }
             }
             for (const s of subjects) {
-              const need = s.weeklyHoursByGrade[gradeId] ?? 0
+              const need = getClassHours(s, c.key, gradeId)
               if (need <= 0) continue
               const missing = need - (counts[s.id] ?? 0)
-              if (missing > 0) withDeficit.push({ classKey: c.key, gradeId, subjId: s.id, missing, isMandatory: isMandatoryBlock(s, gradeId) })
+              if (missing > 0) withDeficit.push({ classKey: c.key, gradeId, subjId: s.id, missing, isMandatory: isMandatoryBlock(s, c.key, gradeId) })
             }
           }
           if (withDeficit.length > 0) {
@@ -1796,8 +1799,8 @@ export default function DersProgramlari() {
             const subjForA = subjects.find(s => s.id === b.subjId)
             const subjForB = subjects.find(s => s.id === a.subjId)
             const curriculumOk =
-              (subjForA?.weeklyHoursByGrade?.[gradeA] ?? 0) > 0 &&
-              (subjForB?.weeklyHoursByGrade?.[gradeB] ?? 0) > 0
+              (subjForA ? getClassHours(subjForA, a.classKey, gradeA) : 0) > 0 &&
+              (subjForB ? getClassHours(subjForB, b.classKey, gradeB) : 0) > 0
             // Müfredat uygun değilse bu hamleyi atla (bu SA yinelemesi hiçbir şey
             // yapmaz, döngü bir sonraki iterasyona geçer) — runOnce'un tamamından
             // çıkmamak için erken "return" DEĞİL, kalan mantığı sarmalayan bir
@@ -1887,7 +1890,7 @@ export default function DersProgramlari() {
 
     // Toplam gerekli ders saati (eksik göstergesi için)
     const totalReq = classes.reduce((sum, c) =>
-      sum + subjects.reduce((s2, subj) => s2 + (subj.weeklyHoursByGrade[c.grade] ?? 0), 0), 0)
+      sum + subjects.reduce((s2, subj) => s2 + getClassHours(subj, c.key, c.grade), 0), 0)
     setTotalReqState(totalReq)
 
     const start = performance.now()
@@ -2064,7 +2067,7 @@ export default function DersProgramlari() {
     let assigned = 0
     for (const c of classes) {
       for (const s of subjects) {
-        const hours = s.weeklyHoursByGrade[c.grade] ?? 0
+        const hours = getClassHours(s, c.key, c.grade)
         if (hours <= 0) continue
         total++
         if (assignments[`${c.key}|${s.id}`]) assigned++
@@ -3004,7 +3007,7 @@ export default function DersProgramlari() {
                   <div className="timetable-head">
                     <div className="title">{c.grade}. Sınıf — {c.section}</div>
                     <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                      <button className="btn btn-outline btn-sm" type="button" onClick={() => setRequirementsGrade(c.grade)}>
+                      <button className="btn btn-outline btn-sm" type="button" onClick={() => setRequirementsClass(c)}>
                         Zorunlu Dersler
                       </button>
                       {tables[c.key] && <div className="tt-status" aria-label="Oluşturuldu">Oluşturuldu</div>}
@@ -3204,11 +3207,15 @@ export default function DersProgramlari() {
         </div>
       )}
 
-      <Modal open={!!requirementsGrade} onClose={() => setRequirementsGrade(null)} title={`${requirementsGrade ?? ''}. Sınıf Zorunlu Ders Saatleri`}>
-        {requirementsGrade ? (
+      <Modal
+        open={!!requirementsClass}
+        onClose={() => setRequirementsClass(null)}
+        title={requirementsClass ? `${requirementsClass.grade}/${requirementsClass.section} Zorunlu Ders Saatleri` : 'Zorunlu Ders Saatleri'}
+      >
+        {requirementsClass ? (
           (() => {
-            const required = getRequiredSubjectsForGrade(subjects, requirementsGrade)
-            if (!required.length) return <div className="muted">Bu sınıf için zorunlu ders bilgisi yok.</div>
+            const required = getRequiredSubjectsForClass(subjects, requirementsClass.key, requirementsClass.grade)
+            if (!required.length) return <div className="muted">Bu şube için zorunlu ders bilgisi yok.</div>
             const total = required.reduce((sum, r) => sum + r.hours, 0)
             return (
               <ul style={{ paddingLeft: 16, margin: 0, lineHeight: 1.4, listStyle: 'disc' }}>
@@ -3222,7 +3229,7 @@ export default function DersProgramlari() {
             )
           })()
         ) : (
-          <div className="muted">Bu sınıf için zorunlu ders bilgisi tanımlı değil.</div>
+          <div className="muted">Bu şube için zorunlu ders bilgisi tanımlı değil.</div>
         )}
       </Modal>
 
@@ -3299,16 +3306,16 @@ function buildClasses(school: ReturnType<typeof useSchool>): { key: ClassKey; gr
   return out
 }
 
-function isMandatoryBlock(subject: ReturnType<typeof useSubjects>['subjects'][number], gradeId: string): boolean {
-  const hours = subject.weeklyHoursByGrade[gradeId] ?? 0
+function isMandatoryBlock(subject: ReturnType<typeof useSubjects>['subjects'][number], classKey: string, gradeId: string): boolean {
+  const hours = getClassHours(subject, classKey, gradeId)
   if (hours < 2) return false
   // Sadece Beden Eğitimi kesin blok olmalı
   const name = subject.name.toLocaleUpperCase('tr-TR')
   return name.includes('BEDEN')
 }
 
-function prefersBlock(subject: ReturnType<typeof useSubjects>['subjects'][number], gradeId: string): boolean {
-  const hours = subject.weeklyHoursByGrade[gradeId] ?? 0
+function prefersBlock(subject: ReturnType<typeof useSubjects>['subjects'][number], classKey: string, gradeId: string): boolean {
+  const hours = getClassHours(subject, classKey, gradeId)
   if (hours < 2) return false
   // Blok tercih eden dersler (zorunlu değil, mümkünse)
   return subject.rule?.preferBlockScheduling ?? false
@@ -3319,7 +3326,7 @@ function calculateDeficits(
   schedule: Record<Day, Cell[]> | undefined,
   subjects: ReturnType<typeof useSubjects>['subjects']
 ): { name: string; missing: number }[] {
-  const required = getRequiredSubjectsForGrade(subjects, c.grade)
+  const required = getRequiredSubjectsForClass(subjects, c.key, c.grade)
   if (!required.length) return []
 
   const counts: Record<string, number> = {}
@@ -3340,15 +3347,16 @@ function calculateDeficits(
     .filter(d => d.missing > 0)
 }
 
-function getRequiredSubjectsForGrade(
+function getRequiredSubjectsForClass(
   subjects: ReturnType<typeof useSubjects>['subjects'],
+  classKey: string,
   gradeId: string
 ): { id: string; name: string; hours: number }[] {
   return subjects
     .map((s) => ({
       id: s.id,
       name: s.name,
-      hours: s.weeklyHoursByGrade[gradeId] ?? 0,
+      hours: getClassHours(s, classKey, gradeId),
     }))
     .filter((s) => s.hours > 0)
 }

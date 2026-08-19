@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from '../components/Modal'
+import Stepper from '../components/Stepper'
 import Toasts, { pushToast } from '../components/Toast'
 import { useGrades } from '../shared/useGrades'
 import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
-import type { Subject } from '../shared/types'
+import { getClassHours, type Subject } from '../shared/types'
 import { useSchool } from '../shared/useSchool'
 
 const SUBJECT_COLORS = [
@@ -14,8 +15,6 @@ const SUBJECT_COLORS = [
 type FormState = {
   name: string
   abbreviation: string
-  weeklyHoursByGrade: Record<string, string>
-  enabledByGrade: Record<string, boolean>
   perDayMax: string
   maxConsecutive: string
   minDays: string
@@ -29,13 +28,47 @@ export default function Dersler() {
   const grades = useGrades()
   const { subjects, add, update, remove, resetToDefaults } = useSubjects()
   const { setTeachers } = useTeachers()
-  const { dailyLessons } = useSchool()
+  const school = useSchool()
+  const { dailyLessons } = school
+
+  // Bir dersin bir sınıf seviyesindeki şubeleri arasında saat sapması var mı?
+  // Varsa Sınıflar sayfasında şubeye özel düzenlenmiş demektir — buradaki tek
+  // sayı artık her şubeyi temsil etmiyor, bunu gizlemeden göster.
+  const getClassBreakdown = (subject: Subject, gradeId: string) => {
+    const gradeCfg = school.grades.find((g) => g.grade === gradeId)
+    if (!gradeCfg) return []
+    return gradeCfg.sections.map((section) => {
+      const classKey = `${gradeId}-${section}`
+      return { section, hours: getClassHours(subject, classKey, gradeId) }
+    })
+  }
+
+  const getDivergingBreakdown = (subject: Subject, gradeId: string) => {
+    const base = subject.weeklyHoursByGrade[gradeId] ?? 0
+    const breakdown = getClassBreakdown(subject, gradeId)
+    return breakdown.some((b) => b.hours !== base) ? breakdown : null
+  }
+
+  // Şube bazlı saatler burada da düzenlenebilir — Sınıflar sayfasıyla aynı
+  // weeklyHoursByClass alanına yazar, ikisi arasında tam senkron.
+  const setHoursForClass = (subjectId: string, classKey: string, nextHours: number) => {
+    const subject = subjects.find((s) => s.id === subjectId)
+    if (!subject) return
+    const clamped = Math.max(0, nextHours)
+    const { id, ...rest } = subject
+    update(id, {
+      ...rest,
+      weeklyHoursByClass: { ...(subject.weeklyHoursByClass ?? {}), [classKey]: clamped },
+    })
+  }
 
   const [query, setQuery] = useState('')
   const [gradeFilter, setGradeFilter] = useState<string>('all')
   const [editing, setEditing] = useState<Subject | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Subject | null>(null)
+  const [breakdownFor, setBreakdownFor] = useState<{ subjectId: string; gradeId: string } | null>(null)
+  const breakdownSubject = breakdownFor ? subjects.find((s) => s.id === breakdownFor.subjectId) ?? null : null
 
   const nameRef = useRef<HTMLInputElement>(null)
 
@@ -72,9 +105,9 @@ export default function Dersler() {
     const normalized: Omit<Subject, 'id'> = {
       name: data.name.trim(),
       abbreviation: data.abbreviation.trim() || undefined,
-      weeklyHoursByGrade: Object.fromEntries(
-        Object.entries(data.weeklyHoursByGrade).map(([k, v]) => [k, data.enabledByGrade[k] ? Math.max(1, toInt(v)) : 0])
-      ),
+      // Saatler artık bu formda değil, doğrudan tablodaki hücrelerden
+      // düzenleniyor — burada sadece mevcut değeri koru.
+      weeklyHoursByGrade: editing?.weeklyHoursByGrade ?? {},
       priority: data.priority,
       rule: {
         perDayMax: data.perDayMax ? Math.max(0, toInt(data.perDayMax)) : 0,
@@ -84,6 +117,9 @@ export default function Dersler() {
         avoidSlots: data.avoidSlots,
       },
       color: data.color,
+      // Şubeye özel saat sapmaları (Sınıflar sayfası) burada düzenlenmiyor —
+      // korunmazsa her "Ders" düzenlemesinde sessizce silinir.
+      weeklyHoursByClass: editing?.weeklyHoursByClass,
     }
     if (editing) {
       update(editing.id, normalized)
@@ -157,9 +193,23 @@ export default function Dersler() {
                   <td>
                     <span className="color-dot" style={{ background: s.color ?? '#93c5fd' }} aria-hidden /> {s.name}
                   </td>
-                  {grades.map((g) => (
-                    <td key={g.id}>{s.weeklyHoursByGrade[g.id] ?? 0}</td>
-                  ))}
+                  {grades.map((g) => {
+                    const hours = s.weeklyHoursByGrade[g.id] ?? 0
+                    const diverging = getDivergingBreakdown(s, g.id)
+                    return (
+                      <td key={g.id}>
+                        <button
+                          type="button"
+                          className="hour-chip"
+                          onClick={() => setBreakdownFor({ subjectId: s.id, gradeId: g.id })}
+                          title={diverging ? 'Şubelere göre farklı — düzenlemek için tıkla' : 'Şube bazında görüntüle / düzenle'}
+                        >
+                          {hours}
+                          {diverging && <span style={{ width: 6, height: 6, borderRadius: 9999, background: '#fbbf24', display: 'inline-block' }} aria-hidden />}
+                        </button>
+                      </td>
+                    )
+                  })}
                   <td>{s.rule?.perDayMax && s.rule.perDayMax > 0 ? s.rule.perDayMax : 'Sınırsız'}</td>
                   <td>{s.rule?.maxConsecutive && s.rule.maxConsecutive > 0 ? s.rule.maxConsecutive : '-'}</td>
                   <td>{s.rule?.minDays && s.rule.minDays > 0 ? `${s.rule.minDays} gün` : '-'}</td>
@@ -177,7 +227,6 @@ export default function Dersler() {
           {/* Mobile cards */}
           <div className="cards">
             {filtered.map((s) => {
-              const anyHours = grades.some((g) => (s.weeklyHoursByGrade[g.id] ?? 0) > 0)
               return (
                 <div key={s.id} className="card glass">
                   <div className="card-head">
@@ -191,19 +240,23 @@ export default function Dersler() {
                   </div>
                   <div className="card-body">
                     <div className="hours">
-                      {anyHours ? (
-                        grades.map((g) => {
-                          const h = s.weeklyHoursByGrade[g.id] ?? 0
-                          if (h <= 0) return null
-                          return (
-                            <div key={g.id} className="chip" title={`${g.label}: ${h} saat`} aria-label={`${g.label}: ${h} saat`}>
-                              {g.label}: {h} saat
-                            </div>
-                          )
-                        })
-                      ) : (
-                        <span className="muted">Bu derste saat tanımlı değil.</span>
-                      )}
+                      {grades.map((g) => {
+                        const h = s.weeklyHoursByGrade[g.id] ?? 0
+                        const diverging = getDivergingBreakdown(s, g.id)
+                        return (
+                          <button
+                            key={g.id}
+                            type="button"
+                            className="chip"
+                            onClick={() => setBreakdownFor({ subjectId: s.id, gradeId: g.id })}
+                            title={diverging ? 'Şubelere göre farklı — düzenlemek için tıkla' : 'Şube bazında görüntüle / düzenle'}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {g.label}: {h} saat
+                            {diverging && <span style={{ marginLeft: 4, width: 6, height: 6, borderRadius: 9999, background: '#fbbf24', display: 'inline-block' }} aria-hidden />}
+                          </button>
+                        )
+                      })}
                     </div>
                     <div className="meta">
                       <span className="pill">Günlük Üst: {s.rule?.perDayMax && s.rule.perDayMax > 0 ? s.rule.perDayMax : 'Sınırsız'}</span>
@@ -242,6 +295,42 @@ export default function Dersler() {
           <button className="btn btn-danger" onClick={onDelete}>Sil</button>
         </div>
       </Modal>
+
+      <Modal
+        open={!!breakdownFor && !!breakdownSubject}
+        onClose={() => setBreakdownFor(null)}
+        title={breakdownSubject && breakdownFor ? `${breakdownSubject.name} — ${breakdownFor.gradeId}. Sınıf Şubeleri` : 'Şube Bazında Saatler'}
+      >
+        {breakdownSubject && breakdownFor && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="muted" style={{ fontSize: 13 }}>
+              Buradaki değişiklikler yalnızca ilgili şubeyi etkiler ve "Sınıflar" sayfasıyla anında eşleşir.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {getClassBreakdown(breakdownSubject, breakdownFor.gradeId).map((b) => {
+                const classKey = `${breakdownFor.gradeId}-${b.section}`
+                return (
+                  <div
+                    key={b.section}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.06)'
+                    }}
+                  >
+                    <span style={{ fontSize: 14, color: '#e2e8f0' }}>{breakdownFor.gradeId}/{b.section}</span>
+                    <Stepper
+                      value={b.hours}
+                      label={`${breakdownFor.gradeId}/${b.section}`}
+                      onChange={(next) => setHoursForClass(breakdownSubject.id, classKey, next)}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   )
 }
@@ -279,8 +368,6 @@ function SubjectModal({
   const buildState = (init?: Subject): FormState => ({
     name: init?.name ?? '',
     abbreviation: init?.abbreviation ?? '',
-    weeklyHoursByGrade: Object.fromEntries(grades.map((g) => [g, String(init?.weeklyHoursByGrade[g] ?? 0)])),
-    enabledByGrade: Object.fromEntries(grades.map((g) => [g, (init?.weeklyHoursByGrade[g] ?? 0) > 0])),
     perDayMax: init?.rule?.perDayMax ? String(init.rule.perDayMax) : '0',
     maxConsecutive: init?.rule?.maxConsecutive ? String(init.rule.maxConsecutive) : '0',
     minDays: init?.rule?.minDays ? String(init.rule.minDays) : '0',
@@ -361,12 +448,9 @@ function SubjectModal({
 
   // Blok yerleştirme yalnızca bir sınıf için haftalık ders saati tam olarak 2
   // olduğunda anlamlı (yardım metninde de belirtildiği gibi); değilse alanı
-  // gizle ki kullanıcı kafası karışmasın.
-  const blockEligible = grades.some((g) => {
-    if (!state.enabledByGrade[g]) return false
-    const h = parseInt(state.weeklyHoursByGrade[g] || '0', 10)
-    return h === 2
-  })
+  // gizle ki kullanıcı kafası karışmasın. Saatler artık bu formda değil,
+  // dersin mevcut (tablodan düzenlenen) saatlerine bakılır.
+  const blockEligible = grades.some((g) => (initial?.weeklyHoursByGrade[g] ?? 0) === 2)
 
   // Reset when opening with different initial
   const prevId = useRef<string | undefined>(initial?.id)
@@ -388,12 +472,6 @@ function SubjectModal({
   const validate = (): boolean => {
     const errs: Record<string, string> = {}
     if (!state.name || state.name.trim().length < 2) errs.name = 'Ad en az 2 karakter olmalı'
-    for (const g of grades) {
-      const v = state.weeklyHoursByGrade[g] ?? ''
-      if (state.enabledByGrade[g]) {
-        if (!/^\d+$/.test(v) || parseInt(v, 10) < 1) errs[`wh_${g}`] = 'En az 1 saat'
-      }
-    }
     if (state.perDayMax !== '' && (!/^\d+$/.test(state.perDayMax) || parseInt(state.perDayMax, 10) < 0)) {
       errs.perDayMax = '0 veya daha büyük bir sayı'
     }
@@ -467,68 +545,8 @@ function SubjectModal({
           </div>
         </div>
 
-        <div className="field">
-          <span className="field-label">Haftalık Saatler</span>
-          <div className="hours-grid">
-            {grades.map((g) => (
-              <label key={g} className="hours-item">
-                <span className="muted">{g}. Sınıf</span>
-                <div className="segmented" role="group" aria-label={`${g}. sınıf durumu`}>
-                  <button
-                    type="button"
-                    className={`seg ${!state.enabledByGrade[g] ? 'active blocked' : ''}`}
-                    aria-pressed={!state.enabledByGrade[g]}
-                    onClick={() => setState((s) => ({ ...s, enabledByGrade: { ...s.enabledByGrade, [g]: false } }))}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    Yok
-                  </button>
-                  <button
-                    type="button"
-                    className={`seg ${state.enabledByGrade[g] ? 'active free' : ''}`}
-                    aria-pressed={state.enabledByGrade[g]}
-                    onClick={() => setState((s) => ({
-                      ...s,
-                      enabledByGrade: { ...s.enabledByGrade, [g]: true },
-                      weeklyHoursByGrade: { ...s.weeklyHoursByGrade, [g]: String(Math.max(1, parseInt(s.weeklyHoursByGrade[g] || '1', 10) || 1)) }
-                    }))}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    Var
-                  </button>
-                </div>
-                {state.enabledByGrade[g] && (
-                  <>
-                    <label className="field-label">Ders Saati Sayısı</label>
-                    <div className="number-stepper">
-                      <button type="button" aria-label="Azalt" onClick={() => setState((s) => ({
-                        ...s,
-                        weeklyHoursByGrade: { ...s.weeklyHoursByGrade, [g]: String(Math.max(1, (parseInt(s.weeklyHoursByGrade[g] || '1', 10) || 1) - 1)) }
-                      }))}>−</button>
-                      <input
-                        type="number"
-                        min={1}
-                        step={1}
-                        className={`input ${errors[`wh_${g}`] ? 'field-error' : ''}`}
-                        value={state.weeklyHoursByGrade[g]}
-                        onChange={(e) => setState((s) => ({
-                          ...s,
-                          weeklyHoursByGrade: { ...s.weeklyHoursByGrade, [g]: e.target.value.replace(/[^0-9]/g, '') }
-                        }))}
-                        aria-invalid={!!errors[`wh_${g}`]}
-                        aria-describedby={errors[`wh_${g}`] ? `err-wh-${g}` : undefined}
-                      />
-                      <button type="button" aria-label="Arttır" onClick={() => setState((s) => ({
-                        ...s,
-                        weeklyHoursByGrade: { ...s.weeklyHoursByGrade, [g]: String(Math.max(1, (parseInt(s.weeklyHoursByGrade[g] || '1', 10) || 1) + 1)) }
-                      }))}>+</button>
-                    </div>
-                    {errors[`wh_${g}`] && <span id={`err-wh-${g}`} className="error-text">{errors[`wh_${g}`]}</span>}
-                  </>
-                )}
-              </label>
-            ))}
-          </div>
+        <div className="help-text">
+          <strong>Bilgi:</strong> Haftalık saatler bu formda değil, dersler tablosundaki sayılara tıklayarak (sınıf ve şube bazında) düzenlenir.
         </div>
 
         <div className="field-row">
