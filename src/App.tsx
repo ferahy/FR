@@ -92,11 +92,7 @@ const LOGIN_SPARKLES = [
   { left: '78%', top: '85%', delay: '1.7s', duration: '3.1s' },
 ]
 
-const LOGIN_ORBS = [
-  { className: 'login-orb-1', speed: 0.16, radiusX: 70, radiusY: 46, phase: 0 },
-  { className: 'login-orb-2', speed: 0.11, radiusX: 90, radiusY: 60, phase: 2.1 },
-  { className: 'login-orb-3', speed: 0.135, radiusX: 60, radiusY: 80, phase: 4.4 },
-]
+const LOGIN_ORBS = ['login-orb-1', 'login-orb-2', 'login-orb-3']
 
 function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   const [name, setName] = useState('')
@@ -107,30 +103,10 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   const [entering, setEntering] = useState(true)
 
   const tiltRef = useRef<HTMLDivElement>(null)
-  const orbRefs = useRef<(HTMLDivElement | null)[]>([])
 
   useEffect(() => {
     const t = setTimeout(() => setEntering(false), 1000)
     return () => clearTimeout(t)
-  }, [])
-
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const start = performance.now()
-    let raf = 0
-    const tick = (now: number) => {
-      const t = (now - start) / 1000
-      LOGIN_ORBS.forEach((o, i) => {
-        const el = orbRefs.current[i]
-        if (!el) return
-        const x = Math.sin(t * o.speed + o.phase) * o.radiusX
-        const y = Math.cos(t * o.speed * 0.85 + o.phase) * o.radiusY
-        el.style.transform = `translate3d(${x}px, ${y}px, 0)`
-      })
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
   }, [])
 
   const submit = (e?: React.FormEvent) => {
@@ -145,21 +121,37 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
     setTimeout(() => setShake(false), 450)
   }
 
+  const spotlightRaf = useRef<number | null>(null)
+  const tiltRaf = useRef<number | null>(null)
+
   const handleShellMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    e.currentTarget.style.setProperty('--mx', `${e.clientX - rect.left}px`)
-    e.currentTarget.style.setProperty('--my', `${e.clientY - rect.top}px`)
+    const shellEl = e.currentTarget
+    const clientX = e.clientX
+    const clientY = e.clientY
+    if (spotlightRaf.current != null) return
+    spotlightRaf.current = requestAnimationFrame(() => {
+      spotlightRaf.current = null
+      const rect = shellEl.getBoundingClientRect()
+      shellEl.style.setProperty('--mx', `${clientX - rect.left}px`)
+      shellEl.style.setProperty('--my', `${clientY - rect.top}px`)
+    })
   }
 
   const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = tiltRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const px = (e.clientX - rect.left) / rect.width
-    const py = (e.clientY - rect.top) / rect.height
-    const rotateY = (px - 0.5) * 8
-    const rotateX = (0.5 - py) * 8
-    el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
+    const clientX = e.clientX
+    const clientY = e.clientY
+    if (tiltRaf.current != null) return
+    tiltRaf.current = requestAnimationFrame(() => {
+      tiltRaf.current = null
+      const el = tiltRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const px = (clientX - rect.left) / rect.width
+      const py = (clientY - rect.top) / rect.height
+      const rotateY = (px - 0.5) * 8
+      const rotateX = (0.5 - py) * 8
+      el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
+    })
   }
 
   const handleCardMouseLeave = () => {
@@ -170,8 +162,8 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="login-shell" onMouseMove={handleShellMouseMove}>
       <div className="login-orbs" aria-hidden="true">
-        {LOGIN_ORBS.map((o, i) => (
-          <div key={o.className} className={`login-orb ${o.className}`} ref={(el) => { orbRefs.current[i] = el }} />
+        {LOGIN_ORBS.map((cls) => (
+          <div key={cls} className={`login-orb ${cls}`} />
         ))}
       </div>
       <div className="login-beam" aria-hidden="true" />
