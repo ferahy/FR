@@ -211,10 +211,6 @@ body{
   animation:loginCardIn .8s cubic-bezier(.16,1,.3,1) .1s forwards;
 }
 .login-card.shake{animation:shake .45s ease}
-.login-glare{
-  position:absolute;inset:0;z-index:2;pointer-events:none;border-radius:22px;
-  opacity:0;transition:opacity .3s ease;
-}
 @property --border-angle{syntax:'<angle>';inherits:false;initial-value:0deg}
 .login-card:before{
   content:"";position:absolute;inset:-1px;border-radius:23px;padding:1px;z-index:-1;

@@ -107,7 +107,6 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   const [entering, setEntering] = useState(true)
 
   const tiltRef = useRef<HTMLDivElement>(null)
-  const glareRef = useRef<HTMLDivElement>(null)
   const orbRefs = useRef<(HTMLDivElement | null)[]>([])
 
   useEffect(() => {
@@ -161,16 +160,11 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
     const rotateY = (px - 0.5) * 8
     const rotateX = (0.5 - py) * 8
     el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
-    if (glareRef.current) {
-      glareRef.current.style.opacity = '1'
-      glareRef.current.style.background = `radial-gradient(circle at ${px * 100}% ${py * 100}%, #ffffff48, transparent 62%)`
-    }
   }
 
   const handleCardMouseLeave = () => {
     const el = tiltRef.current
     if (el) el.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)'
-    if (glareRef.current) glareRef.current.style.opacity = '0'
   }
 
   return (
@@ -219,7 +213,6 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
           onMouseLeave={handleCardMouseLeave}
         >
           <div className={`login-card${entering ? ' entering' : ''}${shake ? ' shake' : ''}`}>
-            <div className="login-glare" ref={glareRef} aria-hidden="true" />
             <div className="login-logo-wrap">
               <div className="login-logo-halo">
                 <img src={fokLogo} alt="Fok" />
@@ -244,21 +237,22 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
               </div>
               <div className="field login-field">
                 <span className="field-label">Şifre</span>
-                <div className="login-field-inner" style={{ position: 'relative' }}>
-                  <input
-                    className="input"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                    placeholder="Şifreniz"
-                    style={{ paddingRight: 80 }}
-                  />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="login-field-inner" style={{ flex: 1 }}>
+                    <input
+                      className="input"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                      placeholder="Şifreniz"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
                     className="btn btn-outline btn-sm"
-                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
                   >
                     {showPassword ? 'Gizle' : 'Göster'}
                   </button>
