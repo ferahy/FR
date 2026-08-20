@@ -7,7 +7,7 @@ import Atamalar from './pages/Atamalar'
 import DersProgramlari from './pages/DersProgramlari'
 import OgretmenProgramlari from './pages/OgretmenProgramlari'
 import TopNav from './layout/TopNav'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useHashRoute } from './shared/useHashRoute'
 import { saveToCloud, loadFromCloud } from './shared/cloudSync'
 import KantePopup from './components/KantePopup'
@@ -70,11 +70,69 @@ export default function App() {
   )
 }
 
+const LOGIN_BUBBLES = [
+  { left: '5%', size: 6, delay: '0s', duration: '9s' },
+  { left: '12%', size: 4, delay: '2.1s', duration: '11s' },
+  { left: '20%', size: 8, delay: '4.4s', duration: '8.5s' },
+  { left: '35%', size: 3, delay: '1.2s', duration: '10s' },
+  { left: '64%', size: 5, delay: '3s', duration: '9.5s' },
+  { left: '78%', size: 7, delay: '0.6s', duration: '10.5s' },
+  { left: '88%', size: 4, delay: '5.2s', duration: '8s' },
+  { left: '95%', size: 6, delay: '2.7s', duration: '11.5s' },
+]
+
+const LOGIN_SPARKLES = [
+  { left: '8%', top: '18%', delay: '0s', duration: '3.2s' },
+  { left: '14%', top: '68%', delay: '1.4s', duration: '2.8s' },
+  { left: '6%', top: '84%', delay: '2.6s', duration: '3.6s' },
+  { left: '22%', top: '38%', delay: '0.9s', duration: '3s' },
+  { left: '90%', top: '22%', delay: '0.5s', duration: '3s' },
+  { left: '86%', top: '72%', delay: '2s', duration: '3.4s' },
+  { left: '93%', top: '48%', delay: '1.1s', duration: '2.6s' },
+  { left: '78%', top: '85%', delay: '1.7s', duration: '3.1s' },
+]
+
+const LOGIN_ORBS = [
+  { className: 'login-orb-1', speed: 0.16, radiusX: 70, radiusY: 46, phase: 0 },
+  { className: 'login-orb-2', speed: 0.11, radiusX: 90, radiusY: 60, phase: 2.1 },
+  { className: 'login-orb-3', speed: 0.135, radiusX: 60, radiusY: 80, phase: 4.4 },
+]
+
 function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [shake, setShake] = useState(false)
+  const [entering, setEntering] = useState(true)
+
+  const tiltRef = useRef<HTMLDivElement>(null)
+  const glareRef = useRef<HTMLDivElement>(null)
+  const orbRefs = useRef<(HTMLDivElement | null)[]>([])
+
+  useEffect(() => {
+    const t = setTimeout(() => setEntering(false), 1000)
+    return () => clearTimeout(t)
+  }, [])
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const start = performance.now()
+    let raf = 0
+    const tick = (now: number) => {
+      const t = (now - start) / 1000
+      LOGIN_ORBS.forEach((o, i) => {
+        const el = orbRefs.current[i]
+        if (!el) return
+        const x = Math.sin(t * o.speed + o.phase) * o.radiusX
+        const y = Math.cos(t * o.speed * 0.85 + o.phase) * o.radiusY
+        el.style.transform = `translate3d(${x}px, ${y}px, 0)`
+      })
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
 
   const submit = (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -84,68 +142,154 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
       return
     }
     setError('Kullanıcı adı veya şifre hatalı')
+    setShake(true)
+    setTimeout(() => setShake(false), 450)
+  }
+
+  const handleShellMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    e.currentTarget.style.setProperty('--mx', `${e.clientX - rect.left}px`)
+    e.currentTarget.style.setProperty('--my', `${e.clientY - rect.top}px`)
+  }
+
+  const handleCardMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = tiltRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const px = (e.clientX - rect.left) / rect.width
+    const py = (e.clientY - rect.top) / rect.height
+    const rotateY = (px - 0.5) * 8
+    const rotateX = (0.5 - py) * 8
+    el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
+    if (glareRef.current) {
+      glareRef.current.style.opacity = '1'
+      glareRef.current.style.background = `radial-gradient(circle at ${px * 100}% ${py * 100}%, #ffffff48, transparent 62%)`
+    }
+  }
+
+  const handleCardMouseLeave = () => {
+    const el = tiltRef.current
+    if (el) el.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)'
+    if (glareRef.current) glareRef.current.style.opacity = '0'
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'radial-gradient(circle at 20% 20%, rgba(79,70,229,0.16), transparent 35%), radial-gradient(circle at 80% 0%, rgba(14,165,233,0.18), transparent 32%), #0f172a',
-      padding: 24
-    }}>
-      <div style={{ maxWidth: 420, width: '100%' }}>
-        <div className="glass" style={{ padding: 32, background: 'rgba(15,23,42,0.82)', border: '1px solid rgba(255,255,255,0.04)', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
-              <img src={fokLogo} alt="Fok" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            </div>
-            <div>
-              <div style={{ color: '#94a3b8', fontSize: 14 }}>Ders programı hazırlamak için giriş yap</div>
-            </div>
-          </div>
-          <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
-            <div className="field">
-              <span className="field-label">Kullanıcı Adı</span>
-              <input
-                className="input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoComplete="username"
-                placeholder="Kullanıcı adınız"
-              />
-            </div>
-            <div className="field">
-              <span className="field-label">Şifre</span>
-              <div style={{ position: 'relative' }}>
-                <input
-                  className="input"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  placeholder="Şifreniz"
-                  style={{ paddingRight: 80 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="btn btn-outline btn-sm"
-                  style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
-                >
-                  {showPassword ? 'Gizle' : 'Göster'}
-                </button>
+    <div className="login-shell" onMouseMove={handleShellMouseMove}>
+      <div className="login-orbs" aria-hidden="true">
+        {LOGIN_ORBS.map((o, i) => (
+          <div key={o.className} className={`login-orb ${o.className}`} ref={(el) => { orbRefs.current[i] = el }} />
+        ))}
+      </div>
+      <div className="login-beam" aria-hidden="true" />
+      <div className="login-spotlight" aria-hidden="true" />
+
+      <div className="ocean-bubbles" aria-hidden="true">
+        {LOGIN_BUBBLES.map((b, i) => (
+          <span
+            key={i}
+            className="bubble"
+            style={{ left: b.left, width: b.size, height: b.size, animationDelay: b.delay, animationDuration: b.duration }}
+          />
+        ))}
+      </div>
+
+      {LOGIN_SPARKLES.map((s, i) => (
+        <span
+          key={i}
+          className="ocean-sparkle login-sparkle"
+          style={{ left: s.left, top: s.top, animationDelay: s.delay, animationDuration: s.duration }}
+        />
+      ))}
+
+      <div className="ocean-jelly login-jelly login-jelly-1" style={{ top: '14%' }}>
+        <JellyfishIconLogin gradId="jelly-grad-login-1" />
+      </div>
+      <div className="ocean-jelly login-jelly login-jelly-2" style={{ top: '62%', animationDelay: '11s, 1.1s' }}>
+        <JellyfishIconLogin gradId="jelly-grad-login-2" />
+      </div>
+
+      <div className="login-vignette" aria-hidden="true" />
+
+      <div className="login-content">
+        <div className="login-glow-ring" aria-hidden="true" />
+        <div
+          className="login-tilt"
+          ref={tiltRef}
+          onMouseMove={handleCardMouseMove}
+          onMouseLeave={handleCardMouseLeave}
+        >
+          <div className={`login-card${entering ? ' entering' : ''}${shake ? ' shake' : ''}`}>
+            <div className="login-glare" ref={glareRef} aria-hidden="true" />
+            <div className="login-logo-wrap">
+              <div className="login-logo-halo">
+                <img src={fokLogo} alt="Fok" />
+              </div>
+              <div>
+                <div className="login-title">Hoş geldiniz</div>
+                <div className="login-subtitle">Ders programı hazırlamak için giriş yap</div>
               </div>
             </div>
-            {error && <div className="error-text" style={{ marginTop: 2 }}>{error}</div>}
-            <button className="btn btn-primary" type="submit" style={{ width: '100%', marginTop: 4 }}>
-              Giriş
-            </button>
-          </form>
+            <form onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
+              <div className="field login-field">
+                <span className="field-label">Kullanıcı Adı</span>
+                <div className="login-field-inner">
+                  <input
+                    className="input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoComplete="username"
+                    placeholder="Kullanıcı adınız"
+                  />
+                </div>
+              </div>
+              <div className="field login-field">
+                <span className="field-label">Şifre</span>
+                <div className="login-field-inner" style={{ position: 'relative' }}>
+                  <input
+                    className="input"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    placeholder="Şifreniz"
+                    style={{ paddingRight: 80 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="btn btn-outline btn-sm"
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
+                  >
+                    {showPassword ? 'Gizle' : 'Göster'}
+                  </button>
+                </div>
+              </div>
+              {error && <div className="error-text" style={{ marginTop: 2 }}>{error}</div>}
+              <button className="btn btn-primary login-submit" type="submit" style={{ width: '100%', marginTop: 4 }}>
+                Giriş
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
+  )
+}
+
+function JellyfishIconLogin({ gradId }: { gradId: string }) {
+  return (
+    <svg viewBox="0 0 24 30" width="100%" height="100%">
+      <path d="M2,12 C2,5 7,1 12,1 C17,1 22,5 22,12 C22,15.5 19,17 12,17 C5,17 2,15.5 2,12 Z" fill={`url(#${gradId})`} />
+      <path d="M6,17 C6,21 5,23 6,27" stroke="#e0f9ffb0" strokeWidth="1" fill="none" strokeLinecap="round" />
+      <path d="M12,17 C12,22 13,24 12,29" stroke="#e0f9ffb0" strokeWidth="1" fill="none" strokeLinecap="round" />
+      <path d="M18,17 C18,21 19,23 18,27" stroke="#e0f9ffb0" strokeWidth="1" fill="none" strokeLinecap="round" />
+      <defs>
+        <radialGradient id={gradId} cx="40%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#f5f3ffdd" />
+          <stop offset="100%" stopColor="#c4b5fd77" />
+        </radialGradient>
+      </defs>
+    </svg>
   )
 }
 

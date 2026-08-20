@@ -149,6 +149,130 @@ body{
   .ocean-waves .wave,.ocean-bubbles .bubble,.ocean-jelly,.ocean-sparkle{animation:none !important;display:none}
 }
 
+/* ─── Login: deep-ocean, elite/premium treatment ─────────────────────────── */
+.login-shell{
+  position:relative;min-height:100vh;overflow:hidden;isolation:isolate;
+  display:flex;align-items:center;justify-content:center;padding:24px;
+  background:
+    radial-gradient(60% 50% at 18% 12%,#22d3ee22,transparent 60%),
+    radial-gradient(55% 45% at 88% 8%,#a78bfa24,transparent 60%),
+    radial-gradient(70% 60% at 50% 110%,#0891b230,transparent 65%),
+    linear-gradient(165deg,#0b1120,#0f172a 55%,#0a0f1d);
+}
+.login-orbs{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.login-orb{position:absolute;border-radius:50%;will-change:transform}
+.login-orb-1{width:440px;height:440px;left:2%;top:6%;background:radial-gradient(circle,#22d3ee40,transparent 70%);filter:blur(80px)}
+.login-orb-2{width:500px;height:500px;right:-4%;top:-6%;background:radial-gradient(circle,#a78bfa3a,transparent 70%);filter:blur(90px)}
+.login-orb-3{width:420px;height:420px;left:30%;bottom:-14%;background:radial-gradient(circle,#0891b244,transparent 70%);filter:blur(85px)}
+.login-beam{
+  position:absolute;left:50%;top:-10%;width:640px;height:120%;z-index:0;pointer-events:none;
+  transform:translateX(-50%);
+  background:conic-gradient(from 180deg at 50% 0%,transparent 78deg,#e0f9ff26 90deg,#a5f3fc14 100deg,transparent 112deg);
+  filter:blur(18px);opacity:.8;
+  animation:loginBeamSway 9s ease-in-out infinite;
+}
+.login-spotlight{position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(320px 320px at var(--mx,50%) var(--my,30%),#67e8f91f,transparent 70%);
+  transition:background .15s ease-out;
+}
+.login-vignette{
+  position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 70% 60% at 50% 48%,transparent 45%,#060912b0 100%);
+}
+.login-shell .ocean-bubbles,.login-shell .ocean-sparkle,.login-shell .ocean-jelly{z-index:0}
+.login-sparkle{bottom:auto}
+.login-jelly{width:34px;height:44px;left:-8%;filter:drop-shadow(0 0 10px #a78bfaa0)}
+.login-jelly-2{width:22px;height:29px;left:-6%}
+.login-content{position:relative;z-index:1;max-width:420px;width:100%}
+.login-glow-ring{
+  position:absolute;left:50%;top:50%;width:560px;height:560px;
+  transform:translate(-50%,-50%);border-radius:50%;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(circle at 35% 38%,#22d3ee2e,transparent 55%),
+    radial-gradient(circle at 68% 64%,#a78bfa26,transparent 55%);
+  filter:blur(50px);
+  animation:loginGlowPulse 6s ease-in-out infinite;
+}
+.login-tilt{
+  transform-style:preserve-3d;
+  transition:transform .5s cubic-bezier(.16,1,.3,1);
+  will-change:transform;
+}
+.login-card{
+  position:relative;padding:36px 32px;border-radius:22px;overflow:hidden;
+  background:linear-gradient(180deg,#0f172ad9,#0b1224e6);
+  border:1px solid #ffffff14;
+  box-shadow:0 30px 80px -20px #000000a0,0 0 0 1px #ffffff08,inset 0 1px 0 #ffffff12;
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  opacity:1;
+}
+.login-card.entering{
+  opacity:0;filter:blur(10px);transform:translateY(22px) scale(.95);
+  animation:loginCardIn .8s cubic-bezier(.16,1,.3,1) .1s forwards;
+}
+.login-card.shake{animation:shake .45s ease}
+.login-glare{
+  position:absolute;inset:0;z-index:2;pointer-events:none;border-radius:22px;
+  opacity:0;transition:opacity .3s ease;
+}
+@property --border-angle{syntax:'<angle>';inherits:false;initial-value:0deg}
+.login-card:before{
+  content:"";position:absolute;inset:-1px;border-radius:23px;padding:1px;z-index:-1;
+  background:conic-gradient(from var(--border-angle),#22d3ee00,#22d3ee80,#a78bfa80,#22d3ee00 60%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:.7;animation:loginBorderSpin 6s linear infinite;
+}
+.login-logo-wrap{display:flex;align-items:center;gap:14px;margin-bottom:22px;position:relative;z-index:1}
+.login-logo-halo{
+  position:relative;width:52px;height:52px;border-radius:14px;
+  display:grid;place-items:center;flex:none;
+  animation:oceanBob 4.5s ease-in-out infinite;
+}
+.login-logo-halo:before{
+  content:"";position:absolute;inset:-8px;border-radius:50%;
+  background:radial-gradient(circle,#22d3ee4a,transparent 70%);
+  filter:blur(4px);animation:loginHaloPulse 2.6s ease-in-out infinite;
+}
+.login-logo-halo img{position:relative;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 14px #00000080)}
+.login-title{font-size:22px;font-weight:800;letter-spacing:-.01em;
+  background:linear-gradient(100deg,#f8fafc 30%,#a5f3fc 45%,#f8fafc 60%);
+  background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:loginShimmerText 5s ease-in-out infinite;
+}
+.login-subtitle{color:#94a3b8;font-size:13.5px;margin-top:2px}
+.login-field{opacity:0;animation:loginFadeUp .55s ease forwards}
+.login-field:nth-of-type(1){animation-delay:.22s}
+.login-field:nth-of-type(2){animation-delay:.3s}
+.login-field-inner{position:relative;border-radius:12px;transition:box-shadow .25s ease}
+.login-field-inner:focus-within{box-shadow:0 0 0 3px #22d3ee2e,0 0 20px -4px #22d3ee55}
+.login-field-inner .input{width:100%;position:relative;background:#ffffff0d}
+.login-submit{
+  position:relative;overflow:hidden;font-weight:700;letter-spacing:.01em;
+  opacity:0;animation:loginFadeUp .55s ease .38s forwards;
+  box-shadow:0 10px 26px -8px #22d3ee55;transition:box-shadow .25s ease,transform .15s ease;
+}
+.login-submit:hover{box-shadow:0 14px 34px -8px #22d3ee80;transform:translateY(-1px)}
+.login-submit:active{transform:translateY(0)}
+.login-submit:after{
+  content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;
+  background:linear-gradient(115deg,transparent,#ffffffb0,transparent);
+  transform:skewX(-20deg);animation:loginSweep 3.2s ease-in-out infinite;
+}
+@keyframes loginBeamSway{0%,100%{transform:translateX(-50%) rotate(-2.5deg)}50%{transform:translateX(-50%) rotate(2.5deg)}}
+@keyframes loginCardIn{to{opacity:1;filter:blur(0);transform:translateY(0) scale(1)}}
+@keyframes loginBorderSpin{to{--border-angle:360deg}}
+@keyframes loginFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes loginHaloPulse{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.12)}}
+@keyframes loginShimmerText{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+@keyframes loginSweep{0%{left:-60%}35%,100%{left:130%}}
+@keyframes loginGlowPulse{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:.9;transform:translate(-50%,-50%) scale(1.1)}}
+@media (prefers-reduced-motion: reduce){
+  .login-beam,.login-card:before,.login-logo-halo,.login-logo-halo:before,.login-title,.login-submit:after,.login-glow-ring{animation:none !important}
+  .login-card,.login-card.entering,.login-field,.login-submit{animation:none !important;opacity:1 !important;filter:none !important;transform:none !important}
+  .login-tilt{transition:none !important}
+}
+
 /* Fancy grade card */
 .grade-card{position:relative;overflow:hidden}
 .grade-card:before{content:"";position:absolute;inset:-1px;border-radius:18px;background:linear-gradient(135deg,#ffffff12,#ffffff0a);filter:blur(26px);z-index:0}
