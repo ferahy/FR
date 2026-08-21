@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useSchool } from '../shared/useSchool'
 import { useSubjects } from '../shared/useSubjects'
 import { useTeachers } from '../shared/useTeachers'
@@ -65,7 +65,7 @@ export default function OgretmenProgramlari() {
     return { available, actual: totalHours, pct }
   }
 
-  // Öğretmenleri yoğunluğa göre sırala (en yüksek → en düşük)
+  // Öğretmenleri yoğunluğa göre sırala (en yüksek → en düşük) — varsayılan sıra
   const sortedTeachers = useMemo(() => {
     if (!hasTables) return teachers
     return [...teachers].sort((a, b) => {
@@ -79,8 +79,74 @@ export default function OgretmenProgramlari() {
     })
   }, [teachers, teacherSchedules, hasTables, slots])
 
+  // Öğretmen isimleri uzun ve listesi kalabalık olabildiğinden, sıralamayı
+  // sürükle-bırak + arama + hızlı toplu sıralama (Yoğunluk/A-Z/Z-A) ile
+  // yönetilen ayrı bir panelde tutuyoruz — tarayıcıda kalıcı.
+  const azTeachers = useMemo(
+    () => [...teachers].sort((a, b) => a.name.localeCompare(b.name, 'tr')),
+    [teachers]
+  )
+  const [teacherOrder, setTeacherOrder] = useLocalStorage<string[]>('opTeacherOrder', [])
+  const orderedTeachers = useMemo(() => {
+    if (!teacherOrder.length) return sortedTeachers
+    const byId = new Map(teachers.map(t => [t.id, t]))
+    const ordered = teacherOrder.map(id => byId.get(id)).filter((t): t is Teacher => !!t)
+    const seen = new Set(ordered.map(t => t.id))
+    const rest = sortedTeachers.filter(t => !seen.has(t.id))
+    return [...ordered, ...rest]
+  }, [teachers, teacherOrder, sortedTeachers])
+
+  const [showTeacherReorder, setShowTeacherReorder] = useState(false)
+  const [teacherSearch, setTeacherSearch] = useState('')
+  const [dragTeacherId, setDragTeacherId] = useState<string | null>(null)
+  const [dragOverTeacherId, setDragOverTeacherId] = useState<string | null>(null)
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null)
+
+  const filteredOrderedTeachers = useMemo(() => {
+    if (!teacherSearch.trim()) return orderedTeachers
+    const q = teacherSearch.toLocaleLowerCase('tr-TR')
+    return orderedTeachers.filter(t => t.name.toLocaleLowerCase('tr-TR').includes(q))
+  }, [orderedTeachers, teacherSearch])
+
+  const applyTeacherSort = (mode: 'utilization' | 'az' | 'za') => {
+    const list = mode === 'utilization' ? sortedTeachers : mode === 'az' ? azTeachers : [...azTeachers].reverse()
+    setTeacherOrder(list.map(t => t.id))
+  }
+  const moveTeacher = (id: string, dir: -1 | 1) => {
+    const base = orderedTeachers.map(t => t.id)
+    const idx = base.indexOf(id)
+    if (idx === -1) return
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= base.length) return
+    const next = [...base]
+    ;[next[idx], next[newIdx]] = [next[newIdx], next[idx]]
+    setTeacherOrder(next)
+  }
+  const moveTeacherToEdge = (id: string, edge: 'start' | 'end') => {
+    const base = orderedTeachers.map(t => t.id)
+    const idx = base.indexOf(id)
+    if (idx === -1) return
+    const next = [...base]
+    next.splice(idx, 1)
+    if (edge === 'start') next.unshift(id)
+    else next.push(id)
+    setTeacherOrder(next)
+  }
+  const reorderTeachers = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return
+    const base = orderedTeachers.map(t => t.id)
+    const from = base.indexOf(sourceId)
+    const to = base.indexOf(targetId)
+    if (from === -1 || to === -1) return
+    const next = [...base]
+    next.splice(from, 1)
+    next.splice(to, 0, sourceId)
+    setTeacherOrder(next)
+  }
+  const resetTeacherOrder = () => { setTeacherOrder([]); setSelectedTeacherId(null) }
+
   const handlePrintHandbooks = () => {
-    const allHTML = teachers
+    const allHTML = orderedTeachers
       .filter(t => teacherSchedules[t.id])
       .map(t => generateTeacherHandbookHTML(t, teacherSchedules[t.id], subjects,
         school.schoolName || 'Hasyurt Ortaokulu', school.principalName, slotTimes))
@@ -95,7 +161,7 @@ export default function OgretmenProgramlari() {
   }
 
   const handlePrintSheet = () => {
-    const html = generateTeacherSheetHTML(teacherSchedules, teachers, subjects, school.schoolName || 'Hasyurt Ortaokulu', slots)
+    const html = generateTeacherSheetHTML(teacherSchedules, orderedTeachers, subjects, school.schoolName || 'Hasyurt Ortaokulu', slots)
     if (!html) { alert('Ders programı bulunamadı.'); return }
     const w = window.open('', '_blank')
     if (!w) { alert('Pop-up engelleyici aktif.'); return }
@@ -112,6 +178,14 @@ export default function OgretmenProgramlari() {
           <div className="title">Öğretmen Programları</div>
         </div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className={`btn btn-outline btn-sm class-order-toggle${showTeacherReorder ? ' active' : ''}`}
+            type="button"
+            onClick={() => setShowTeacherReorder(v => !v)}
+            title="Öğretmenlerin gösterim sırasını değiştir"
+          >
+            ⠿ Öğretmenleri Sırala
+          </button>
           {lockedCount > 0 && (
             <button
               onClick={clearAllLocks}
@@ -136,6 +210,92 @@ export default function OgretmenProgramlari() {
           <button className="btn btn-outline" onClick={handlePrintSheet} disabled={!hasTables}>📊 Öğretmen Çarşaf PDF</button>
         </div>
       </div>
+
+      {showTeacherReorder && (
+        <div className="glass class-order-panel" style={{ margin: '0 0 16px' }}>
+          <div className="class-order-head">
+            <div>
+              <span className="class-order-title">Öğretmen Sırası</span>
+              <span className="class-order-hint">
+                {selectedTeacherId
+                  ? `${teachers.find(t => t.id === selectedTeacherId)?.name ?? ''} seçili — aşağıdan taşı`
+                  : 'ara, sürükle veya bir öğretmene dokunup taşı'}
+              </span>
+            </div>
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button" className="btn btn-outline btn-sm"
+                disabled={!selectedTeacherId} onClick={() => selectedTeacherId && moveTeacherToEdge(selectedTeacherId, 'start')}
+              >⇤ Başa Al</button>
+              <button
+                type="button" className="btn btn-outline btn-sm"
+                disabled={!selectedTeacherId} onClick={() => selectedTeacherId && moveTeacherToEdge(selectedTeacherId, 'end')}
+              >Sona Al ⇥</button>
+              {teacherOrder.length > 0 && (
+                <button type="button" className="class-order-reset" onClick={resetTeacherOrder}>
+                  Varsayılana Dön
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="row" style={{ gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              className="teacher-order-search"
+              placeholder="🔍 Öğretmen ara..."
+              value={teacherSearch}
+              onChange={(e) => setTeacherSearch(e.target.value)}
+            />
+            <div className="segmented seg-xs" role="group" aria-label="Hızlı sıralama">
+              <button type="button" className="seg" onClick={() => applyTeacherSort('utilization')} title="Yoğunluğa göre sırala">Yoğunluk</button>
+              <button type="button" className="seg" onClick={() => applyTeacherSort('az')} title="İsme göre A-Z sırala">A–Z</button>
+              <button type="button" className="seg" onClick={() => applyTeacherSort('za')} title="İsme göre Z-A sırala">Z–A</button>
+            </div>
+          </div>
+
+          <div className="teacher-order-list">
+            {filteredOrderedTeachers.length === 0 && (
+              <div className="teacher-order-empty">"{teacherSearch}" ile eşleşen öğretmen yok</div>
+            )}
+            {filteredOrderedTeachers.map((t) => {
+              const globalIdx = orderedTeachers.findIndex(x => x.id === t.id)
+              return (
+                <div
+                  key={t.id}
+                  className={`teacher-order-row${dragTeacherId === t.id ? ' dragging' : ''}${dragOverTeacherId === t.id && dragTeacherId !== t.id ? ' drag-over' : ''}${selectedTeacherId === t.id ? ' selected' : ''}`}
+                  draggable
+                  onClick={() => setSelectedTeacherId(k => k === t.id ? null : t.id)}
+                  onDragStart={() => setDragTeacherId(t.id)}
+                  onDragEnd={() => { setDragTeacherId(null); setDragOverTeacherId(null) }}
+                  onDragOver={(e) => { e.preventDefault(); if (dragTeacherId && dragTeacherId !== t.id) setDragOverTeacherId(t.id) }}
+                  onDragLeave={() => setDragOverTeacherId((k) => (k === t.id ? null : k))}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (dragTeacherId) reorderTeachers(dragTeacherId, t.id)
+                    setDragTeacherId(null)
+                    setDragOverTeacherId(null)
+                  }}
+                >
+                  <span className="teacher-order-handle">⠿</span>
+                  <span className="teacher-order-pos">{globalIdx + 1}</span>
+                  <span className="teacher-order-name" title={t.name}>{t.name}</span>
+                  <span className="teacher-order-arrows">
+                    <button
+                      type="button" className="class-order-arrow"
+                      onClick={(e) => { e.stopPropagation(); moveTeacher(t.id, -1) }} disabled={globalIdx === 0} title="Yukarı taşı"
+                    >▲</button>
+                    <button
+                      type="button" className="class-order-arrow"
+                      onClick={(e) => { e.stopPropagation(); moveTeacher(t.id, 1) }} disabled={globalIdx === orderedTeachers.length - 1} title="Aşağı taşı"
+                    >▼</button>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Kilitleme bilgi bandı */}
       {lockedCount > 0 && (
@@ -194,7 +354,7 @@ export default function OgretmenProgramlari() {
         </div>
       ) : (
         <div className="timetable-sections">
-          {sortedTeachers.map((teacher) => {
+          {orderedTeachers.map((teacher) => {
             const schedule = teacherSchedules[teacher.id]
             if (!schedule) return null
 

@@ -29,6 +29,54 @@ export default function DersProgramlari() {
   const slots = useMemo(() => Array.from({ length: Math.max(1, school.dailyLessons || 1) }, (_, i) => `S${i + 1}`), [school.dailyLessons])
   const classes = useMemo(() => buildClasses(school), [school])
 
+  // Sınıf kartlarının gösterim sırası — kullanıcı elle değiştirebilir
+  // (ör. 6/C ve 7/C'yi en sona almak için), tarayıcıda kalıcı tutulur.
+  const [classOrder, setClassOrder] = useLocalStorage<string[]>('dpClassOrder', [])
+  const orderedClasses = useMemo(() => {
+    if (!classOrder.length) return classes
+    const byKey = new Map(classes.map(c => [c.key, c]))
+    const ordered = classOrder.map(k => byKey.get(k)).filter((c): c is typeof classes[number] => !!c)
+    const seen = new Set(ordered.map(c => c.key))
+    const rest = classes.filter(c => !seen.has(c.key))
+    return [...ordered, ...rest]
+  }, [classes, classOrder])
+  const moveClass = (key: string, dir: -1 | 1) => {
+    const base = orderedClasses.map(c => c.key)
+    const idx = base.indexOf(key)
+    if (idx === -1) return
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= base.length) return
+    const next = [...base]
+    ;[next[idx], next[newIdx]] = [next[newIdx], next[idx]]
+    setClassOrder(next)
+  }
+  const reorderClasses = (sourceKey: string, targetKey: string) => {
+    if (sourceKey === targetKey) return
+    const base = orderedClasses.map(c => c.key)
+    const from = base.indexOf(sourceKey)
+    const to = base.indexOf(targetKey)
+    if (from === -1 || to === -1) return
+    const next = [...base]
+    next.splice(from, 1)
+    next.splice(to, 0, sourceKey)
+    setClassOrder(next)
+  }
+  const moveClassToEdge = (key: string, edge: 'start' | 'end') => {
+    const base = orderedClasses.map(c => c.key)
+    const idx = base.indexOf(key)
+    if (idx === -1) return
+    const next = [...base]
+    next.splice(idx, 1)
+    if (edge === 'start') next.unshift(key)
+    else next.push(key)
+    setClassOrder(next)
+  }
+  const resetClassOrder = () => setClassOrder([])
+  const [showReorder, setShowReorder] = useState(false)
+  const [dragClassKey, setDragClassKey] = useState<string | null>(null)
+  const [dragOverClassKey, setDragOverClassKey] = useState<string | null>(null)
+  const [selectedClassKey, setSelectedClassKey] = useState<string | null>(null)
+
   const [tables, setTables] = useLocalStorage<Record<ClassKey, Record<Day, Cell[]>>>('timetables', {})
   const [lockedTeachers] = useLocalStorage<string[]>('lockedTeachers', [])
   const [lockedCells, setLockedCells] = useLocalStorage<string[]>('lockedCells', [])
@@ -119,7 +167,7 @@ export default function DersProgramlari() {
 
   const handlePrintHandbooks = () => {
     // Generate HTML for all classes and open in new window
-    const allHTML = classes
+    const allHTML = orderedClasses
       .filter(c => tables[c.key]) // Only classes with schedules
       .map(c => generateClassHandbookHTML(
         c.key,
@@ -159,7 +207,7 @@ export default function DersProgramlari() {
       tables,
       subjects,
       teachers,
-      classes,
+      orderedClasses,
       school.schoolName || 'Hasyurt Ortaokulu',
       slots
     )
@@ -2036,15 +2084,7 @@ export default function DersProgramlari() {
     window.setTimeout(tick, 0)
   }
 
-  const classesToShow = useMemo(() => classes.filter(c => gradeFilter === 'all' ? true : c.grade === gradeFilter), [classes, gradeFilter])
-  const grouped = useMemo(() => {
-    const map = new Map<string, typeof classes>()
-    for (const c of classesToShow) {
-      if (!map.has(c.grade)) map.set(c.grade, [])
-      map.get(c.grade)!.push(c)
-    }
-    return Array.from(map.entries()).sort((a,b) => Number(a[0]) - Number(b[0]))
-  }, [classesToShow])
+  const classesToShow = useMemo(() => orderedClasses.filter(c => gradeFilter === 'all' ? true : c.grade === gradeFilter), [orderedClasses, gradeFilter])
 
   const classDeficits = useMemo(() => {
     if (!Object.keys(tables ?? {}).length) return []
@@ -2767,6 +2807,14 @@ export default function DersProgramlari() {
           </select>
         </label>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className={`btn btn-outline btn-sm class-order-toggle${showReorder ? ' active' : ''}`}
+            type="button"
+            onClick={() => setShowReorder(v => !v)}
+            title="Sınıfların gösterim sırasını değiştir"
+          >
+            ⠿ Sınıfları Sırala
+          </button>
           <button className="btn btn-outline" onClick={() => setShowSheet(true)} disabled={!Object.keys(tables ?? {}).length || isGenerating}>Çarşaf Görünüm</button>
           <button className="btn btn-outline" onClick={handlePrintHandbooks} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📄 Sınıf El PDF</button>
           <button className="btn btn-outline" onClick={handlePrintSheet} disabled={!Object.keys(tables ?? {}).length || isGenerating}>📊 Sınıf Çarşaf PDF</button>
@@ -2998,11 +3046,69 @@ export default function DersProgramlari() {
         </div>
       )}
 
+      {showReorder && (
+        <div className="glass class-order-panel">
+          <div className="class-order-head">
+            <div>
+              <span className="class-order-title">Sınıf Sırası</span>
+              <span className="class-order-hint">
+                {selectedClassKey ? `${orderedClasses.find(c => c.key === selectedClassKey)?.grade}/${orderedClasses.find(c => c.key === selectedClassKey)?.section} seçili — aşağıdan taşı` : 'bir sınıfa dokun, sonra taşı'}
+              </span>
+            </div>
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button" className="btn btn-outline btn-sm"
+                disabled={!selectedClassKey} onClick={() => selectedClassKey && moveClassToEdge(selectedClassKey, 'start')}
+              >⇤ Başa Al</button>
+              <button
+                type="button" className="btn btn-outline btn-sm"
+                disabled={!selectedClassKey} onClick={() => selectedClassKey && moveClassToEdge(selectedClassKey, 'end')}
+              >Sona Al ⇥</button>
+              {classOrder.length > 0 && (
+                <button type="button" className="class-order-reset" onClick={resetClassOrder}>
+                  Varsayılana Dön
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="class-order-track">
+            {orderedClasses.map((c, idx) => (
+              <div
+                key={c.key}
+                className={`chip class-order-chip${dragClassKey === c.key ? ' dragging' : ''}${dragOverClassKey === c.key && dragClassKey !== c.key ? ' drag-over' : ''}${selectedClassKey === c.key ? ' selected' : ''}`}
+                draggable
+                onClick={() => setSelectedClassKey(k => k === c.key ? null : c.key)}
+                onDragStart={() => setDragClassKey(c.key)}
+                onDragEnd={() => { setDragClassKey(null); setDragOverClassKey(null) }}
+                onDragOver={(e) => { e.preventDefault(); if (dragClassKey && dragClassKey !== c.key) setDragOverClassKey(c.key) }}
+                onDragLeave={() => setDragOverClassKey((k) => (k === c.key ? null : k))}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  if (dragClassKey) reorderClasses(dragClassKey, c.key)
+                  setDragClassKey(null)
+                  setDragOverClassKey(null)
+                }}
+              >
+                <span className="class-order-handle">⠿</span>
+                <span className="class-order-label">{c.grade}/{c.section}</span>
+                <button
+                  type="button" className="class-order-arrow"
+                  onClick={(e) => { e.stopPropagation(); moveClass(c.key, -1) }} disabled={idx === 0} title="Sola taşı"
+                >◀</button>
+                <button
+                  type="button" className="class-order-arrow"
+                  onClick={(e) => { e.stopPropagation(); moveClass(c.key, 1) }} disabled={idx === orderedClasses.length - 1} title="Sağa taşı"
+                >▶</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="timetable-sections">
-        {grouped.map(([gradeId, list]) => (
-          <div key={gradeId} className="grade-section">
-            <div className="grid-timetables">
-              {list.map((c) => (
+        <div className="grade-section">
+          <div className="grid-timetables">
+            {classesToShow.map((c) => (
                 <div key={c.key} className="timetable glass">
                   <div className="timetable-head">
                     <div className="title">{c.grade}. Sınıf — {c.section}</div>
@@ -3175,7 +3281,6 @@ export default function DersProgramlari() {
               ))}
             </div>
           </div>
-        ))}
       </div>
 
       {classDeficits.length > 0 && (
@@ -3262,7 +3367,7 @@ export default function DersProgramlari() {
                   </tr>
                 </thead>
                 <tbody>
-                  {classes.map((c) => (
+                  {orderedClasses.map((c) => (
                     <tr key={c.key}>
                       <td className="sheet-class">{c.grade}. Sınıf {c.section}</td>
                       {DAYS.map((d) =>
